@@ -113,7 +113,7 @@ Optional:
 
 For a prebuilt version, download the ZIP from [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases),
 extract it and move Watercoded.app into Applications. These builds are not notarized: after attempting to open
-one, macOS may require **System Settings > Privacy & Security > Open Anyway**. Release builds show an update icon beside Settings when a new version is available;
+one, macOS may require **System Settings > Privacy & Security > Open Anyway**. Release builds check on launch and every 10 minutes, showing an update icon beside Settings when a new version is available;
 hover to see the version and click to review and install. You can also use **Watercoded > Check for Updates…**. Installing an update requires confirmation.
 See [release and installation details](docs/RELEASING.md).
 

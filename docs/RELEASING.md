@@ -33,6 +33,12 @@ Each release hosts its own signed feed and ZIP; GitHub's latest-release redirect
 GitHub Pages is not required. The feed contains the latest full update, so older installed builds can
 upgrade directly. Release builds contain both arm64 and x86_64 executables and require macOS 26.
 
+Release builds check quietly at launch and every 10 minutes while the app is running. These are Sparkle
+information-only probes: signatures, skipped versions and compatibility are still handled by Sparkle.
+Probes respect the automatic-check preference and skip any in-progress update session. A sleeping Mac does
+not wake just to check, and an unavailable network waits for a later check. Sparkle's own scheduler remains
+intact as a fallback; the additional probes avoid overriding its one-hour scheduled-check minimum.
+
 Watercoded > Check for Updates… checks manually. Scheduled checks reveal an update icon beside Settings in the sidebar footer, without opening a window
 or stealing focus, including checks near launch. Hovering shows the available version; clicking the icon
 opens Sparkle's review/install window. Manual menu checks still open Sparkle's UI. Dismissing or skipping
