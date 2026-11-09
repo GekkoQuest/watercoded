@@ -25,6 +25,10 @@ public protocol AgentSession: AnyObject, Sendable {
     /// question text → chosen label(s). Requires ``ProviderCapabilities/questions``.
     func answer(_ requestID: String, with answers: [String: String]) async throws
 
+    /// Tells a reattached background session the settings it was started with (permission mode, model, effort…),
+    /// which a relay log doesn't carry. Sessions whose agent process kept its own settings can ignore this.
+    func restoreSettings(_ configuration: SessionConfiguration) async
+
     /// Answers an ``AgentEvent/formRequested(_:)``.
     func respondToForm(_ requestID: String, with response: FormResponse) async throws
 
@@ -55,6 +59,8 @@ extension AgentSession {
     public func respondToForm(_ requestID: String, with response: FormResponse) async throws {
         throw AgentError.unsupported("MCP forms")
     }
+
+    public func restoreSettings(_ configuration: SessionConfiguration) async {}
 
     public func setModel(_ model: String?) async throws {
         throw AgentError.unsupported("Changing models mid-session")

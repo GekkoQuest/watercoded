@@ -183,6 +183,13 @@ actor CodexSession: AgentSession {
         )
     }
 
+    func restoreSettings(_ configuration: SessionConfiguration) async {
+        // Reattached: the placeholder configuration becomes the Current's real one. The app server already holds
+        // the thread's sandbox and approval policy; these drive what Watercoded sends and auto-approves.
+        self.configuration = configuration
+        planning = configuration.permissionMode == .plan
+    }
+
     func setModel(_ model: String?) async throws {
         configuration.model = model
         translator.modelChanged(to: model == "default" ? nil : model)

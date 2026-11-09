@@ -64,12 +64,21 @@ public struct DiffLine: Sendable, Hashable {
     public var text: String
     public var oldNumber: Int?
     public var newNumber: Int?
+    /// The line is the last in its file and has no newline after it (`\ No newline at end of file`).
+    public var isMissingNewline: Bool
 
-    public init(kind: Kind, text: String, oldNumber: Int? = nil, newNumber: Int? = nil) {
+    public init(
+        kind: Kind,
+        text: String,
+        oldNumber: Int? = nil,
+        newNumber: Int? = nil,
+        isMissingNewline: Bool = false
+    ) {
         self.kind = kind
         self.text = text
         self.oldNumber = oldNumber
         self.newNumber = newNumber
+        self.isMissingNewline = isMissingNewline
     }
 }
 
@@ -148,8 +157,13 @@ private struct UnifiedDiffParser {
             hunk?.lines.append(DiffLine(kind: .context, text: text, oldNumber: oldLine, newNumber: newLine))
             oldLine += 1
             newLine += 1
+        case "\\":
+            // "\ No newline at end of file" applies to the line before it; patches must say so too.
+            if let last = hunk?.lines.indices.last {
+                hunk?.lines[last].isMissingNewline = true
+            }
         default:
-            break // "\ No newline at end of file" and blank separators
+            break // blank separators
         }
     }
 

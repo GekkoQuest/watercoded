@@ -299,6 +299,8 @@ public final class CurrentController: Identifiable {
         }
         do {
             let session = try await provider.reattachSession(handle)
+            // The relay log has the conversation, not the settings: hand them back (plan mode, effort, Full Access…).
+            await session.restoreSettings(sessionConfiguration(for: provider))
             attach(session)
             return true
         } catch {
@@ -329,7 +331,17 @@ public final class CurrentController: Identifiable {
             pendingSetup = nil
             await runSetup(setup)
         }
-        let configuration = SessionConfiguration(
+        let session = try await provider.startSession(sessionConfiguration(for: provider))
+        attach(session)
+        if let handle = await session.relayHandle() {
+            update { $0.relay = handle }
+        }
+        return session
+    }
+
+    /// Everything the provider needs to start (or, after reattaching, to be reminded of) this Current's session.
+    private func sessionConfiguration(for provider: any AgentProvider) -> SessionConfiguration {
+        var configuration = SessionConfiguration(
             workingDirectory: current.channel.url,
             model: current.model,
             permissionMode: current.permissionMode,
@@ -339,14 +351,8 @@ public final class CurrentController: Identifiable {
             relayDirectory: provider.descriptor.capabilities.contains(.backgroundSessions) ? relayDirectory() : nil,
             branchAt: current.pendingBranchAt
         )
-        var withServers = configuration
-        withServers.mcpServers = mcpServers()
-        let session = try await provider.startSession(withServers)
-        attach(session)
-        if let handle = await session.relayHandle() {
-            update { $0.relay = handle }
-        }
-        return session
+        configuration.mcpServers = mcpServers()
+        return configuration
     }
 
     private func attach(_ session: any AgentSession) {
