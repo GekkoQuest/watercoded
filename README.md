@@ -5,6 +5,8 @@
 
 **A native macOS home for your coding agents, where the interface behaves like water and the water carries information.**
 
+![Watercoded showing the session sidebar, agent tool calls, context usage and message composer](docs/images/watercoded.png)
+
 Run the coding agents you already use (Claude Code and Codex today, with more providers to come) in parallel, each in its own git worktree. Each session's message box fills with water as the agent works, and a small glass next to the session in the sidebar shows the same thing at a glance:
 
 | Water | Meaning |
@@ -124,6 +126,16 @@ Optional:
    go to **System Settings ▸ Privacy & Security ▸ Open Anyway**, then confirm opening Watercoded.
 4. Click **Try the Demo**, or install and sign in to an agent CLI listed above, then use
    **Add Repository…** (⇧⌘O) and **New Session…** (⌘N).
+
+<details>
+<summary>Session setup preview</summary>
+
+![New Session sheet with repository, agent, model, effort, permissions, worktree and GitHub issue options](docs/images/new-session.png)
+
+Choose permissions and whether to use a worktree for each session. This screenshot shows Full Access
+with the worktree option off; new installations default to Ask and their own worktree.
+
+</details>
 
 You do not need Homebrew or the full Xcode app to run a release. The ZIP includes both Apple silicon and
 Intel executables. Help ▸ What the Water Means (⇧⌘/) explains the water.
