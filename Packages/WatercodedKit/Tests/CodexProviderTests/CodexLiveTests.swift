@@ -1,5 +1,6 @@
 import AgentKit
 import Foundation
+import ProcessKit
 import Testing
 import WatercodedCore
 @testable import CodexProvider
@@ -94,9 +95,66 @@ struct CodexLiveTests {
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "hello.txt").path))
     }
 
+    @Test func `a background session survives detaching and keeps its pending approval`() async throws {
+        let relay = try #require(Self.relayExecutable, "build the package first")
+        let folder = FileManager.default.temporaryDirectory
+            .appending(path: "watercoded-codex-relay-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let provider = CodexProvider(relay: RelayCommand(executable: relay, arguments: []))
+        #expect(provider.descriptor.capabilities.contains(.backgroundSessions))
+        let first = try await provider.startSession(SessionConfiguration(
+            workingDirectory: folder, permissionMode: .ask, relayDirectory: folder.appending(path: ".relay")
+        ))
+        try await first.send(UserMessage(text: "Run the shell command `touch made-by-codex.txt`, then reply DONE."))
+        var asked: PermissionRequest?
+        for await event in first.events {
+            if case let .permissionRequested(request) = event {
+                asked = request
+                break
+            }
+        }
+        #expect(asked?.subject?.contains("touch") == true)
+        let handle = try #require(await first.relayHandle())
+        await first.detach() // as if Watercoded quit with the approval still waiting
+
+        let second = try await provider.reattachSession(handle)
+        var restored = false
+        var outcome: TurnOutcome?
+        for await event in second.events {
+            switch event {
+            case let .permissionRequested(request):
+                restored = true
+                try await second.respond(to: request.id, with: .allow)
+            case let .turnFinished(result):
+                outcome = result
+            default:
+                break
+            }
+            if outcome != nil {
+                break
+            }
+        }
+        await second.terminate()
+        #expect(restored, "the pending approval is restored after reattaching")
+        #expect(outcome == .completed)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "made-by-codex.txt").path))
+    }
+
     @Test func `the model catalog comes from the account`() async throws {
         let catalog = try #require(await CodexProvider().modelCatalog())
         #expect(!catalog.models.isEmpty)
         #expect(catalog.defaultModelID != nil)
+    }
+
+    static var relayExecutable: URL? {
+        var directory = URL(filePath: #filePath).deletingLastPathComponent()
+        while directory.path != "/",
+              !FileManager.default.fileExists(atPath: directory.appending(path: "Package.swift").path) {
+            directory.deleteLastPathComponent()
+        }
+        return ["out/Products/Debug", "debug"].map { directory.appending(path: ".build/\($0)/watercoded-relay") }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 }

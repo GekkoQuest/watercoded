@@ -12,16 +12,20 @@ public struct CodexProvider: AgentProvider {
 
     private let executableName: String
     private let environment: ShellEnvironment
+    /// How to start background relays; `nil` disables background sessions.
+    private let relay: RelayCommand?
     /// Where Codex saves sessions (`~/.codex/sessions`), for importing them.
     let sessionsDirectory: URL
 
     public init(
         executableName: String = "codex",
         environment: ShellEnvironment = .shared,
+        relay: RelayCommand? = nil,
         sessionsDirectory: URL = CodexProvider.homeDirectory.appending(path: "sessions", directoryHint: .isDirectory)
     ) {
         self.executableName = executableName
         self.environment = environment
+        self.relay = relay
         self.sessionsDirectory = sessionsDirectory
     }
 
@@ -31,10 +35,10 @@ public struct CodexProvider: AgentProvider {
             displayName: "Codex",
             symbolName: "chevron.left.forwardslash.chevron.right",
             tintHue: 0.45,
-            capabilities: [
+            capabilities: ProviderCapabilities([
                 .streamingText, .toolApprovals, .interrupt, .resume, .queueing, .liveSettings,
                 .customModels, .images, .branching, .planMode, .questions
-            ],
+            ]).union(relay == nil ? [] : .backgroundSessions), // the app server keeps running after quit
             models: [AgentModel(id: "default", displayName: "Default", isDefault: true)],
             installHint: "Install the Codex CLI, then run `codex login` once in Terminal to sign in.",
             installURL: URL(string: "https://developers.openai.com/codex/cli"),
@@ -84,7 +88,11 @@ public struct CodexProvider: AgentProvider {
             workingDirectory: configuration.workingDirectory,
             environment: environment.environment()
         )
-        return try await CodexSession.launch(spec, configuration: configuration)
+        return try await CodexSession.launch(spec, configuration: configuration, relay: relay)
+    }
+
+    public func reattachSession(_ handle: RelayHandle) async throws -> any AgentSession {
+        try await CodexSession.reattach(handle)
     }
 
     public func terminalResumeCommand(sessionID: String) -> [String]? {

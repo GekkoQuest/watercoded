@@ -19,6 +19,8 @@ struct CodexWireTranslator {
     private(set) var threadID: String?
     /// The thread's model, needed to switch between plan and default collaboration modes.
     private(set) var model: String?
+    /// The thread's working folder (for sandbox roots after reattaching).
+    private(set) var cwd: String?
     private(set) var currentTurnID: String?
     private(set) var isTurnActive = false
     private var failure: String?
@@ -64,6 +66,7 @@ struct CodexWireTranslator {
         threadID = id
         let model = result["model"]?.string ?? thread["model"]?.string
         self.model = model
+        cwd = result["cwd"]?.string ?? thread["cwd"]?.string
         let instructions = result["instructionSources"]?.array?.compactMap(\.string) ?? []
         return [
             .sessionStarted(SessionInfo(providerSessionID: id, model: model)),

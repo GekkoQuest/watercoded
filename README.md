@@ -23,7 +23,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.2). There's no prebuilt download yet: you build it from source, which takes a few minutes
+> **Status:** early (v0.3). There's no prebuilt download yet: you build it from source, which takes a few minutes
 > once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
@@ -71,7 +71,7 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 ### Getting around
 
 - **Find anything:** search every session (⇧⌘F); export any session as Markdown; re-run it on another model.
-- **Bring your history:** import sessions you ran with the Claude Code CLI in a repository.
+- **Bring your history:** import sessions you ran with the Claude Code or Codex CLI in a repository.
 - **Leave anytime:** Continue in Terminal resumes the session in its folder with the agent's own CLI
   (`claude --resume` or `codex resume`).
 - **Storage:** Settings ▸ Storage lists worktrees by size and removes unused ones (branches are kept).

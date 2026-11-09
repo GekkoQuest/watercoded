@@ -105,7 +105,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CodexProviderTests",
-            dependencies: ["CodexProvider", "AgentKit", "WatercodedCore"],
+            dependencies: ["CodexProvider", "AgentKit", "WatercodedCore", "ProcessKit", "watercoded-relay"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

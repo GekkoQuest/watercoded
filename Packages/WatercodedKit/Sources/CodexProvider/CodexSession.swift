@@ -3,11 +3,14 @@ import Foundation
 import ProcessKit
 import WatercodedCore
 
-/// One `codex app-server` process speaking JSON-RPC over stdio, holding one thread.
+/// One `codex app-server` process speaking JSON-RPC over stdio, holding one thread. Owned directly, or
+/// run under a background relay so it keeps working after the app quits (ADR 0009, ADR 0011).
 actor CodexSession: AgentSession {
     nonisolated let events: AsyncStream<AgentEvent>
 
     private let channel: any LineChannel
+    private let relay: RelayedProcess?
+    private var detached = false
     private let continuation: AsyncStream<AgentEvent>.Continuation
     private var translator = CodexWireTranslator()
     private var nextID = 0
@@ -21,16 +24,26 @@ actor CodexSession: AgentSession {
     /// Whether turns run in Codex's plan mode. Starts from the permission mode; Build turns it off.
     private var planning: Bool
 
-    static func launch(_ spec: ProcessSpec, configuration: SessionConfiguration) async throws -> CodexSession {
-        let process = try LineStreamingProcess(
-            executable: spec.executable,
-            arguments: spec.arguments,
-            currentDirectory: spec.workingDirectory,
-            environment: spec.environment
-        )
-        let session = CodexSession(channel: process, configuration: configuration)
+    static func launch(
+        _ spec: ProcessSpec,
+        configuration: SessionConfiguration,
+        relay: RelayCommand?
+    ) async throws -> CodexSession {
+        let session: CodexSession
+        if let relay, let directory = configuration.relayDirectory {
+            let process = try RelayedProcess.launch(relay: relay, directory: directory, spec: spec)
+            session = CodexSession(channel: process, relay: process, configuration: configuration)
+        } else {
+            let process = try LineStreamingProcess(
+                executable: spec.executable,
+                arguments: spec.arguments,
+                currentDirectory: spec.workingDirectory,
+                environment: spec.environment
+            )
+            session = CodexSession(channel: process, relay: nil, configuration: configuration)
+        }
         do {
-            try await session.start()
+            try await session.start(handshake: true)
         } catch {
             await session.terminate()
             throw error
@@ -38,15 +51,30 @@ actor CodexSession: AgentSession {
         return session
     }
 
-    private init(channel: any LineChannel, configuration: SessionConfiguration) {
+    /// Reconnects to an app server that kept running under a relay while the app was closed.
+    ///
+    /// Replays the log through a fresh translator to rebuild the thread, pending approvals, questions
+    /// and plan, and whether a turn is running; publishes that state once, then continues live. The app
+    /// server still holds the thread, so no `thread/resume` is needed.
+    static func reattach(_ handle: RelayHandle) async throws -> CodexSession {
+        let process = try RelayedProcess(directory: handle.url, offset: handle.offset)
+        let placeholder = SessionConfiguration(workingDirectory: FileManager.default.temporaryDirectory)
+        let session = CodexSession(channel: process, relay: process, configuration: placeholder)
+        await session.catchUp(through: handle.offset, in: handle.url)
+        try await session.start(handshake: false)
+        return session
+    }
+
+    private init(channel: any LineChannel, relay: RelayedProcess?, configuration: SessionConfiguration) {
         self.channel = channel
+        self.relay = relay
         self.configuration = configuration
         planning = configuration.permissionMode == .plan
         imageDirectory = FileManager.default.temporaryDirectory.appending(path: "watercoded-codex-images")
         (events, continuation) = AsyncStream.makeStream(of: AgentEvent.self, bufferingPolicy: .unbounded)
     }
 
-    private func start() async throws {
+    private func start(handshake: Bool) async throws {
         Task { [weak self, channel] in
             for await line in channel.standardOutputLines {
                 await self?.receive(line: line)
@@ -59,6 +87,7 @@ actor CodexSession: AgentSession {
                 await self?.recordStandardError(line)
             }
         }
+        guard handshake else { return }
         _ = try await request("initialize", CodexRequests.initialize())
         try notify("initialized")
         let open = CodexRequests.openThread(configuration)
@@ -142,9 +171,10 @@ actor CodexSession: AgentSession {
         configuration.permissionMode = mode
         planning = mode == .plan
         pendingOverrides["approvalPolicy"] = .string(CodexRequests.policy(for: mode).approval)
+        let folder = translator.cwd.map { URL(filePath: $0) } ?? configuration.workingDirectory
         pendingOverrides["sandboxPolicy"] = CodexRequests.sandboxPolicy(
             for: mode,
-            writableRoots: [configuration.workingDirectory] + configuration.additionalDirectories
+            writableRoots: [folder] + configuration.additionalDirectories
         )
     }
 
@@ -156,6 +186,89 @@ actor CodexSession: AgentSession {
 
     func terminate() async {
         channel.terminate(grace: .seconds(3))
+    }
+
+    func relayHandle() async -> RelayHandle? {
+        guard let relay, !ended else { return nil }
+        return RelayHandle(directory: relay.directory.path, offset: relay.offset)
+    }
+
+    func detach() async {
+        guard let relay else {
+            await terminate()
+            return
+        }
+        detached = true
+        relay.detach()
+    }
+
+    // MARK: Reattaching
+
+    private func catchUp(through offset: Int64, in directory: URL) {
+        var latest: [String: AgentEvent] = [:] // newest event of each kind worth restoring
+        var pending: [String: AgentEvent] = [:]
+        var order: [String] = []
+
+        for (record, end) in RelayLog.records(in: directory) where end <= offset {
+            switch record {
+            case let .output(line):
+                guard let message = try? JSONValue(parsing: line) else { continue }
+                if message["method"] == nil, let result = message["result"], result["thread"] != nil {
+                    // Our thread/start (or resume, fork) response.
+                    for event in translator.threadOpened(result) {
+                        latest[event.restoreKey ?? "other"] = event
+                    }
+                    continue
+                }
+                for event in translator.translate(message) {
+                    switch event {
+                    case let .permissionRequested(request):
+                        pending[request.id] = event
+                        order.append(request.id)
+                    case let .planProposed(id, _), let .questionAsked(id, _):
+                        pending[id] = event
+                        order.append(id)
+                    default:
+                        if let key = event.restoreKey {
+                            latest[key] = event
+                        }
+                    }
+                }
+            case let .input(line):
+                guard let message = try? JSONValue(parsing: line) else { continue }
+                if let id = message["id"]?.int, message["method"] != nil {
+                    nextID = max(nextID, id) // our own requests: keep ids unique
+                }
+                switch message["method"]?.string {
+                case "turn/start":
+                    _ = translator.turnRequested()
+                case nil where message["id"] != nil:
+                    // Our answer to one of Codex's requests: no longer pending.
+                    let requestID = "codex-\(message["id"]?.compactString() ?? "")"
+                    pending[requestID] = nil
+                    _ = translator.consumeApproval(requestID)
+                    _ = translator.consumeQuestion(requestID)
+                default:
+                    break
+                }
+            case .error, .exited:
+                continue
+            }
+        }
+
+        for key in ["session", "environment", "usage", "planUsage", "tasks"] {
+            if let event = latest[key] {
+                continuation.yield(event)
+            }
+        }
+        if translator.isTurnActive {
+            continuation.yield(.turnStarted)
+        }
+        for id in order {
+            if let event = pending.removeValue(forKey: id) {
+                continuation.yield(event)
+            }
+        }
     }
 
     // MARK: JSON-RPC
@@ -232,7 +345,7 @@ actor CodexSession: AgentSession {
     }
 
     private func finish(exitCode: Int32) {
-        guard !ended else { return }
+        guard !ended, !detached else { return }
         ended = true
         for waiting in responses.values {
             waiting.resume(throwing: AgentError.sessionClosed)
@@ -256,6 +369,20 @@ enum CodexError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case let .request(message): "Codex: \(message)"
+        }
+    }
+}
+
+extension AgentEvent {
+    /// Which piece of restored state this event carries after reattaching, if any.
+    fileprivate var restoreKey: String? {
+        switch self {
+        case .sessionStarted: "session"
+        case .environmentReported: "environment"
+        case .usageUpdated: "usage"
+        case .planUsageUpdated: "planUsage"
+        case .tasksUpdated: "tasks"
+        default: nil
         }
     }
 }

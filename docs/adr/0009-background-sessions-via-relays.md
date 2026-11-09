@@ -32,3 +32,9 @@ It's on by default ("Keep agents working after Watercoded quits"). Providers opt
   relays unchanged.
 - Verified end to end against claude 2.1.319 by `ClaudeCodeLiveTests` (detach while an approval is pending, reattach,
   approve, finish).
+
+## Note (2026-11-09)
+Until v0.3.0 the Claude provider never declared `.backgroundSessions`, so the controller never passed a relay directory
+and agents stopped when the app quit, despite this ADR. Providers now declare the capability whenever the app gives them a
+`RelayCommand`. Codex uses the same relay (ADR 0011). The live tests `… survives detaching and keeps its pending
+approval` (Claude and Codex) cover the round trip.

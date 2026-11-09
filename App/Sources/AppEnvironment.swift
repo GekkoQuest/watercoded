@@ -24,7 +24,7 @@ struct AppEnvironment {
         let registry = ProviderRegistry([
             // Background sessions run under this same binary in `--relay` mode.
             ClaudeCodeProvider(relay: Bundle.main.executableURL.map { RelayCommand(executable: $0) }),
-            CodexProvider(),
+            CodexProvider(relay: Bundle.main.executableURL.map { RelayCommand(executable: $0) }),
             ReplayProvider()
         ])
         let workspace = Workspace(registry: registry, repository: FileWorkspaceRepository())

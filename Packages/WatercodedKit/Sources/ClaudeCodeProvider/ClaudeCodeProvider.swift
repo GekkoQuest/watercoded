@@ -74,10 +74,10 @@ public struct ClaudeCodeProvider: AgentProvider {
             displayName: "Claude Code",
             symbolName: "sparkle",
             tintHue: 0.07,
-            capabilities: [
+            capabilities: ProviderCapabilities([
                 .streamingText, .toolApprovals, .interrupt, .resume, .planMode, .costReporting, .queueing,
                 .liveSettings, .questions, .customModels, .branching
-            ],
+            ]).union(relay == nil ? [] : .backgroundSessions), // keeps running after quit, under a relay
             models: [
                 AgentModel(id: "default", displayName: "Default", isDefault: true),
                 AgentModel(id: "opus", displayName: "Opus"),
