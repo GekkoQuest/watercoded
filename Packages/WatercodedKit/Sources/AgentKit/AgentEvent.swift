@@ -19,6 +19,8 @@ public enum AgentEvent: Sendable, Hashable {
     case messageCompleted(messageID: String, text: String)
     /// The agent invoked a tool.
     case toolCallStarted(ToolCall)
+    /// Authoritative tool details arrived after the call began.
+    case toolCallUpdated(callID: String, summary: String, input: JSONValue)
     /// A tool finished.
     case toolCallFinished(callID: String, output: String, isError: Bool)
     /// The agent needs the user's approval before continuing.

@@ -44,6 +44,11 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
   requests get a JSON-RPC error. Either way the turn continues.
 - Background sessions run `codex app-server` under Watercoded's relay (ADR 0009). Reattaching replays the log to rebuild
   the thread, pending approvals, questions and plan; the app server still holds the thread, so no resume is needed.
+- Web searches carry `query`, nullable `action` (search query/queries, openPage URL, or findInPage URL/pattern),
+  and nullable `results` (opaque JSON array in 0.167.0's generated protocol). A started item can have an empty
+  query; completion refreshes the existing card's input and summary. Results are shown when supplied; missing,
+  null or empty results get an explicit explanation rather than an empty card. This does not expose page
+  contents that Codex does not send.
 - Sessions run in Terminal can be imported from the saved session files; ones Watercoded started (`originator:
   watercoded`) aren't offered again.
 

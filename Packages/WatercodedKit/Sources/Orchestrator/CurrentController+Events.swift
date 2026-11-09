@@ -38,10 +38,11 @@ extension CurrentController {
             streamingText = ""
             append(.assistant(text: text))
         case let .thinking(_, text, tokens):
-            flushStreamingText()
-            append(.thinking(ThinkingRecord(text: text, estimatedTokens: tokens)))
+            handleThinking(text: text, tokens: tokens)
         case let .toolCallStarted(call):
             handleToolStarted(call)
+        case let .toolCallUpdated(callID, summary, input):
+            handleToolUpdated(callID: callID, summary: summary, input: input)
         case let .toolCallFinished(callID, output, isError):
             handleToolFinished(callID: callID, output: output, isError: isError)
         case let .permissionRequested(request):
@@ -84,6 +85,11 @@ extension CurrentController {
         onAttention?(self, .approvalNeeded(request))
     }
 
+    private func handleThinking(text: String, tokens: Int?) {
+        flushStreamingText()
+        append(.thinking(ThinkingRecord(text: text, estimatedTokens: tokens)))
+    }
+
     private func handleToolStarted(_ call: ToolCall) {
         flushStreamingText()
         let record = ToolCallRecord(
@@ -102,6 +108,14 @@ extension CurrentController {
             activeSubagentCalls.insert(call.callID)
             activity.activeSubagents = activeSubagentCalls.count
         }
+    }
+
+    private func handleToolUpdated(callID: String, summary: String, input: JSONValue) {
+        guard let index = toolItemIndex[callID],
+              case var .toolCall(record) = transcript[index].content else { return }
+        record.summary = summary
+        record.input = input.prettyString()
+        transcript[index].content = .toolCall(record)
     }
 
     private func handleToolFinished(callID: String, output: String, isError: Bool) {

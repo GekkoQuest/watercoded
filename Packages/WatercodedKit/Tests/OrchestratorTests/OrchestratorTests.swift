@@ -11,6 +11,33 @@ import WatercodedCore
 @MainActor
 @Suite("Workspace", .serialized)
 struct WorkspaceTests {
+    @Test func `late tool details update the existing card without counting another call`() async throws {
+        let fixture = try await Fixture.make()
+        defer { fixture.cleanUp() }
+        let current = Current(
+            poolID: PoolID(), title: "Search", providerID: ProviderID(rawValue: "test"), model: nil,
+            permissionMode: .ask, channel: Channel(kind: .checkout, path: "/tmp", branch: "main", baseCommit: "abc")
+        )
+        let controller = CurrentController(
+            current: current, transcript: [], provider: nil, repository: fixture.storage
+        )
+        controller.handle(.toolCallStarted(ToolCall(
+            callID: "w", name: "Web search", kind: .web, summary: "Searching the web", input: [:]
+        )))
+        let itemID = try #require(controller.transcript.first).id
+        let input: JSONValue = ["query": "Swift news"]
+        controller.handle(.toolCallUpdated(callID: "w", summary: "Swift news", input: input))
+        controller.handle(.toolCallFinished(callID: "w", output: "Results", isError: false))
+        let record = try #require(toolCalls(controller).first)
+        #expect(controller.transcript.count == 1)
+        #expect(controller.transcript.first?.id == itemID)
+        #expect(controller.activity.toolCallCount == 1)
+        #expect(record.summary == "Swift news")
+        #expect(record.input == input.prettyString())
+        #expect(record.output == "Results")
+        #expect(record.status == .succeeded)
+    }
+
     @Test func `replay current runs to completion`() async throws {
         let fixture = try await Fixture.make()
         defer { fixture.cleanUp() }

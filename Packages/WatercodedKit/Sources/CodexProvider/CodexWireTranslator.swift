@@ -183,8 +183,10 @@ struct CodexWireTranslator {
                 callID: id, name: tool, kind: .other, summary: tool, input: item["arguments"] ?? [:]
             ))]
         case "webSearch":
-            let query = item["query"]?.string ?? "Searching the web"
-            return [.toolCallStarted(ToolCall(callID: id, name: "Web search", kind: .web, summary: query, input: [:]))]
+            let details = Self.webSearchDetails(item)
+            return [.toolCallStarted(ToolCall(
+                callID: id, name: "Web search", kind: .web, summary: details.summary, input: details.input
+            ))]
         case "collabAgentToolCall":
             let prompt = item["prompt"]?.string ?? "Delegating to another agent"
             return [.toolCallStarted(ToolCall(
@@ -223,7 +225,9 @@ struct CodexWireTranslator {
             let diffs = item["changes"]?.array?.compactMap { $0["diff"]?.string } ?? []
             let output = status == "declined" ? "Declined." : diffs.joined(separator: "\n")
             return [.toolCallFinished(callID: id, output: output, isError: failed)] + resumeGenerating()
-        case "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall":
+        case "webSearch":
+            return Self.webSearchCompleted(item, id: id, failed: failed) + resumeGenerating()
+        case "mcpToolCall", "dynamicToolCall", "collabAgentToolCall":
             let output = item["result"].map { $0.compactString() } ?? item["contentItems"]
                 .map { $0.compactString() } ?? ""
             return [.toolCallFinished(callID: id, output: output, isError: failed || item["success"]?.bool == false)]
