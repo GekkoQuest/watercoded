@@ -10,8 +10,8 @@ small modules with one-way dependencies. The app target is only a composition ro
 | `WatercodedCore` | Domain vocabulary: `Pool`, `Current`, `Channel`, `TranscriptItem`, `UsageSnapshot`, `JSONValue`, `Slug`. Pure value types, all `Sendable`. | — |
 | `ProcessKit` | Subprocesses: login-shell `PATH` resolution (`ShellEnvironment`), run-to-completion (`ProcessRunner`), long-lived JSON Lines (`LineStreamingProcess`), and background relays (`RelayHost`, `RelayedProcess`, both behind `LineChannel`). | Core |
 | `AgentKit` | The provider contract: `AgentProvider`, `AgentSession`, normalized `AgentEvent`, `ProviderCapabilities`, `ProviderRegistry`. | Core, ProcessKit |
-| `GitKit` | `GitClient` (shells out to git), `WorktreeManager`, `UnifiedDiff` parser. | Core, ProcessKit |
-| `Orchestrator` | `Workspace` (pools + currents), `CurrentController` (one session's state machine), persistence (`WorkspaceRepository`). | Core, AgentKit, GitKit |
+| `GitKit` | `GitClient` (shells out to git; GitHub issues and pull request status via `gh`), `WorktreeManager`, `UnifiedDiff` parser. | Core, ProcessKit |
+| `Orchestrator` | `Workspace` (pools + currents), `CurrentController` (one session's state machine), persistence (`WorkspaceRepository`), and per-feature extensions: worktree setup (`WorktreePreparer`), Verify, branching, pull request watching, storage, model options. | Core, AgentKit, GitKit |
 | `Meniscus` | Water engine: 1D wave simulation, particles, shake detection, energy-gated display link, Metal `layerEffect` shader. No app knowledge. | — |
 | `WatercodedDesign` | Tokens (`Spacing`, `Radius`, `Motion`), glass components, `VesselGlyph` / `ComposerVessel`. | Core, Meniscus |
 | `WatercodedUI` | Features: sidebar, Current screen, transcript, composer, approvals, diff inspector, settings, commands, menu bar extra. | everything above |

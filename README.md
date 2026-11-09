@@ -5,22 +5,23 @@
 
 **A native macOS home for your coding agents, where the interface behaves like water and the water carries information.**
 
-Run the coding agents you already use (Claude Code today, with more providers to come) in parallel, each in its own git worktree. Each session's water fills the message box as it works, and a small vessel next to it in the sidebar shows the same state at a glance:
+Run the coding agents you already use (Claude Code today, with more providers to come) in parallel, each in its own git worktree. Each session's message box fills with water as the agent works, and a small glass next to the session in the sidebar shows the same thing at a glance:
 
 | Water | Meaning |
 |---|---|
-| Fill level | How much of the context window is used |
-| Ripples and drops | Tokens streaming, tool calls landing |
-| A droplet hanging from the rim | The agent is waiting for your approval |
+| How full it is | How much of the model's context window the conversation uses |
+| Ripples | The agent is writing a reply |
+| Drops falling in | Tool calls; bigger drops for edits and commands |
+| A droplet hanging from the top | The agent is waiting for your approval. It falls in when you allow, and evaporates when you deny. |
 | Murky water | Your check (Verify) or the agent's last test or build failed, or the turn failed |
 | Rising bubbles | Subagents at work |
-| A gurgle as the level drops | The conversation was compacted |
-| Light frost | The prompt cache expired; the next turn re-reads context |
-| Heat haze | You're close to a plan limit (or spending fast on an API key) |
-| Frost | Archived |
+| A burst of bubbles as the level drops | The conversation was compacted |
+| Light frost | The prompt cache expired, so the next turn re-reads the whole context |
+| Heat haze | A subscription limit is over 80% used, or an API-key session has spent more than $5 |
+| Frost, and the water stops moving | The session is archived |
 
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
-Reduce Motion is fully respected.
+Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
 > **Status:** early (v0.1). There's no prebuilt download yet: you build it from source, which takes a few minutes
 > once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).

@@ -12,9 +12,9 @@ on this repository (**Security ▸ Report a vulnerability**). If that option isn
 ## Model
 
 - Watercoded never handles provider credentials. It launches CLIs you've installed and signed in to.
-- New Currents default to **Ask** permissions. **Full Access** is opt-in per Current and shown in red.
-- So that you can switch a running Current to Full Access without restarting it, every Claude Code session is
+- New sessions default to **Ask** permissions. **Full Access** is opt-in per session and shown in red.
+- So that you can switch a running session to Full Access without restarting it, every Claude Code session is
   launched with `--allow-dangerously-skip-permissions`. That flag only *allows* the mode; the session starts in the
   mode you chose, and Watercoded asks for confirmation before switching to Full Access (see ADR 0008).
-- Each Current runs in its own git worktree by default.
+- Each session runs in its own git worktree by default.
 - No telemetry is collected.

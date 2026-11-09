@@ -6,10 +6,10 @@ extension CurrentStatus {
     public var title: String {
         switch self {
         case .draft: "Draft"
-        case .flowing: "Flowing"
+        case .flowing: "Working"
         case .waiting: "Needs You"
         case .ashore: "Ready for Review"
-        case .stalled: "Stalled"
+        case .stalled: "Failed"
         case .settled: "Archived"
         }
     }

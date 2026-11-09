@@ -12,12 +12,12 @@ describes where it's going, not what ships today. See [What's built today](#what
 | Area | Built (v0.1) | Planned |
 |---|---|---|
 | Providers | Claude Code (your own CLI), Replay (demo) | Codex, ACP agents (Cursor, Gemini…), OpenCode, Agent SDK for API keys |
-| Sessions | Currents in worktrees or your checkout, background sessions that outlive the app, importing CLI sessions | Daemon with event store, remote Reservoirs, containers |
-| Conversation | Streaming, approvals, plan mode, questions, task progress, images, `@` files, `/` commands | Quick Composer, queue and steer |
-| Review | Changes inspector per session or turn, revert files and hunks, review comments | Terminal, file tree, quick editor, browser preview |
-| Shipping | Land: commit, merge or open a pull request | Stacked PRs, Watch PR, other Git hosts |
-| Undo | Per-turn git snapshots | Full Tide (side effects), forking |
-| Water | Vessels, slosh, shake to settle, droplets, murk, frost, Reduce Motion | Tilt, sound, Pool overview |
+| Sessions | Sessions in worktrees or your checkout, worktree setup (copied files, setup script), background sessions that outlive the app, importing CLI sessions, Continue in Terminal | Daemon with event store, remote Reservoirs, containers |
+| Conversation | Streaming, approvals, plan mode, questions, task progress, token stats, images, `@` files, `/` commands | Quick Composer, queue and steer |
+| Review | Changes inspector per session or turn, revert files and hunks, review comments, Verify (the repository's own check) | Terminal, file tree, quick editor, browser preview |
+| Shipping | Land: commit, merge or open a pull request; one-click conflict fix; start from a GitHub issue; watch the PR's checks and reviews | Stacked PRs, other Git hosts |
+| Undo | Per-turn git snapshots; branch or edit-and-resend from any turn | Full Tide (side effects) |
+| Water | Water in the message box and sidebar, slosh, shake to stop, droplets, murk, frost, heat haze, Reduce Motion | Tilt, sound, Pool overview |
 | Signature | None yet | Delta, Crosscurrents, the Chart, Springs |
 | Platforms | macOS 26, menu bar extra, notifications | iOS companion, App Intents, widgets |
 
