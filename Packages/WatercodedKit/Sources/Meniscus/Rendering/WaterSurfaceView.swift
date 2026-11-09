@@ -5,6 +5,8 @@ import SwiftUI
 /// The water refracts whatever is drawn beneath it, so never put text *inside* this view.
 /// Text layered on top of it (as in the composer) stays sharp.
 public struct WaterSurfaceView: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let vessel: Vessel
     private let role: VesselRole
     private let tint: Color
@@ -17,7 +19,10 @@ public struct WaterSurfaceView: View {
 
     public var body: some View {
         VesselInterior()
-            .modifier(WaterEffect(frame: vessel.frame(for: role), tint: tint))
+            .modifier(WaterEffect(
+                frame: vessel.frame(for: role), tint: tint,
+                compact: role == .glyph, reduceTransparency: reduceTransparency, reduceMotion: reduceMotion
+            ))
             .onGeometryChange(for: CGSize.self) { $0.size } action: { vessel.resize(role, to: $0) }
     }
 }
@@ -25,12 +30,15 @@ public struct WaterSurfaceView: View {
 private struct WaterEffect: ViewModifier {
     let frame: RenderFrame
     let tint: Color
+    let compact: Bool
+    let reduceTransparency: Bool
+    let reduceMotion: Bool
 
     func body(content: Content) -> some View {
         content.layerEffect(
             WaterShaders.library.water(
                 .boundingRect,
-                .float(frame.time),
+                .float(reduceMotion ? 0 : frame.time),
                 .float(frame.level),
                 .floatArray(frame.heights),
                 .floatArray(frame.particles),
@@ -38,7 +46,9 @@ private struct WaterEffect: ViewModifier {
                 .float(frame.clarity),
                 .float(frame.frost),
                 .color(tint),
-                .float(frame.heat)
+                .float(frame.heat),
+                .float(compact ? 1 : 0),
+                .float(reduceTransparency ? 1 : 0)
             ),
             maxSampleOffset: CGSize(width: 28, height: 28)
         )
@@ -56,7 +66,7 @@ private struct VesselInterior: View {
     var body: some View {
         let dark = colorScheme == .dark
         LinearGradient(
-            colors: dark ? [Color(white: 0.13), Color(white: 0.17)] : [Color(white: 0.98), Color(white: 0.93)],
+            colors: dark ? [Color(white: 0.12), Color(white: 0.14)] : [Color(white: 0.99), Color(white: 0.96)],
             startPoint: .top,
             endPoint: .bottom
         )

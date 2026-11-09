@@ -98,11 +98,11 @@ session (`--resume`).
 
 ## The water engine
 
-- `WaterSurface`: a damped wave equation over N columns, solved with 3 substeps per frame (CFL-clamped), with volume conservation. It also handles drops, spray and bubbles, and a hanging approval droplet on a spring.
+- `WaterSurface`: a damped wave equation over N columns, solved with 3 substeps per frame (CFL-clamped), with volume conservation. Streaming drives smooth, time-based wave modes rather than per-frame noise; sidebar vessels use slower waves and stronger damping than the composer. It also handles drops, spray and bubbles, and a hanging approval droplet on a spring.
 - `MotionTracker`: turns window origin into smoothed velocity and acceleration. Direction reversals within 600 ms count as a shake.
 - `WaterEngine`: a single `NSView.displayLink` per window. When every vessel is settled and the window is still, the link pauses. Idle cost is zero.
   It drops to 30 fps in Low Power Mode or under thermal pressure, pauses when the window is occluded, and turns physics off with Reduce Motion.
-- `Water.metal`: a SwiftUI `[[stitchable]]` layer effect. It combines the surface and drops as metaballs, refracts the layer beneath, and adds caustics, murk, foam and frost.
+- `Water.metal`: a SwiftUI `[[stitchable]]` layer effect. It combines the surface and drops as metaballs, refracts the layer beneath, and adds caustics, murk, foam and frost. Highlights and droplet joins adapt to the vessel size; Reduce Transparency disables refraction, caustics and heat shimmer.
   SwiftPM and Xcode compile it into the module's `default.metallib`.
 
 ## Testing

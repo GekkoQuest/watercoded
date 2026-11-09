@@ -19,14 +19,14 @@ public enum VesselRole: Hashable, Sendable, CaseIterable {
 
     var particleCap: Int {
         switch self {
-        case .glyph: 10
+        case .glyph: 3
         case .panel: 48
         }
     }
 
     var dropScale: Float {
         switch self {
-        case .glyph: 0.45
+        case .glyph: 0.35
         case .panel: 1
         }
     }
@@ -68,6 +68,9 @@ public final class Vessel {
         for role in VesselRole.allCases {
             var tuning = WaterSurface.Tuning()
             tuning.particleCap = role.particleCap
+            tuning.waveSpeed = role == .glyph ? 28 : 180
+            tuning.damping = role == .glyph ? 5 : 2.4
+            tuning.restoring = 6
             surfaces[role] = WaterSurface(columns: role.columns, level: Float(state.level), tuning: tuning)
             frames[role] = RenderFrame(heights: Array(repeating: 0, count: role.columns), level: Float(state.level))
         }
@@ -161,7 +164,7 @@ public final class Vessel {
                     accel: accel,
                     gain: gain,
                     turbulence: state.isStreaming ? (role == .glyph ? 0.35 : 1) : 0,
-                    bubbleRate: state.hasSubagents ? (role == .glyph ? 2 : 7) : 0
+                    bubbleRate: state.hasSubagents ? (role == .glyph ? 0.5 : 2) : 0
                 )
             }
         }
@@ -177,7 +180,7 @@ public final class Vessel {
             publishedAtRest = false
         }
 
-        let frameTime = atRest ? (frames[.panel]?.time ?? 0) : Float(time.truncatingRemainder(dividingBy: 1000))
+        let frameTime = atRest ? (frames[.panel]?.time ?? 0) : Float(time)
         var newFrames: [VesselRole: RenderFrame] = [:]
         for (role, surface) in surfaces {
             newFrames[role] = RenderFrame(
@@ -188,14 +191,14 @@ public final class Vessel {
                 clarity: clarity,
                 frost: frost,
                 heat: heat,
-                time: frameTime
+                time: still ? 0 : frameTime
             )
         }
         frames = newFrames
     }
 
     var isSettled: Bool {
-        !state.isStreaming && !state.hasSubagents
+        ((engine?.reduceMotion == true || engine?.intensity == .still) || (!state.isStreaming && !state.hasSubagents))
             && (state.isFrozen || surfaces.values.allSatisfy(\.isSettled))
             && clarity == (state.isHealthy ? 1 : 0.12)
             && frost == (state.isFrozen ? 1 : (state.isChilled ? 0.3 : 0))

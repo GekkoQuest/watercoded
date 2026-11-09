@@ -12,6 +12,31 @@ struct WaterSurfaceTests {
         return surface
     }
 
+    @Test func `layout does not disturb resting water`() {
+        let surface = WaterSurface(columns: 20, level: 0.5)
+        surface.resize(to: [18, 26])
+        surface.step(dt: 1.0 / 60, accel: .zero, gain: 1, turbulence: 0, bubbleRate: 0)
+        #expect(surface.isSettled)
+        surface.resize(to: [22, 30])
+        #expect(surface.isSettled)
+    }
+
+    @Test func `streaming ripples agree across display refresh rates`() {
+        func simulate(fps: Int) -> [Float] {
+            let surface = makeSurface()
+            for _ in 0 ..< fps * 6 {
+                surface.step(dt: 1 / Float(fps), accel: .zero, gain: 1, turbulence: 1, bubbleRate: 0)
+            }
+            return surface.heights
+        }
+        let slow = simulate(fps: 30)
+        let fast = simulate(fps: 120)
+        #expect(fast.contains { abs($0) > 0.1 }, "Streaming must remain visible")
+        for (lhs, rhs) in zip(slow, fast) {
+            #expect(abs(lhs - rhs) < 0.25, "Low Power Mode should retain the same motion")
+        }
+    }
+
     @Test func `drop splashes then settles`() {
         let surface = makeSurface()
         surface.drop(radius: 6)
@@ -100,5 +125,26 @@ struct MotionTrackerTests {
             peak = max(peak, tracker.update(position: [t * 200, 0], dt: dt, now: t).level)
         }
         #expect(peak == .gentle)
+    }
+}
+
+@Suite("Water accessibility")
+@MainActor
+struct VesselAccessibilityTests {
+    @Test func `reduce motion can settle while streaming and delegating`() {
+        let engine = WaterEngine()
+        engine.reduceMotion = true
+        let vessel = engine.vessel(
+            for: "active",
+            initial: WaterState(level: 0.5, isStreaming: true, hasSubagents: true)
+        )
+        vessel.perform(.drop(.large))
+        vessel.step(dt: 1.0 / 60, accel: [8000, 0], gain: 0, still: true, time: 5)
+        #expect(vessel.isSettled)
+        let frame = vessel.frame(for: .panel)
+        #expect(frame.heights.allSatisfy { $0 == 0 })
+        #expect(frame.time == 0)
+        engine.reduceMotion = false
+        #expect(!vessel.isSettled)
     }
 }

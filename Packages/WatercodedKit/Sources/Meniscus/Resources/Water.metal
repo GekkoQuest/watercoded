@@ -28,26 +28,6 @@ static float heightAt(float x, float width, device const float *heights, int cou
                   + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t);
 }
 
-static float2 hash2(float2 p) {
-    p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453);
-}
-
-// 1 on Voronoi cell edges, 0 inside cells: frost crystals.
-static float voronoiEdge(float2 x) {
-    float2 cell = floor(x), local = fract(x);
-    float nearest = 8.0, second = 8.0;
-    for (int j = -1; j <= 1; j++) {
-        for (int i = -1; i <= 1; i++) {
-            float2 offset = float2(i, j);
-            float2 r = offset + hash2(cell + offset) - local;
-            float d = dot(r, r);
-            if (d < nearest) { second = nearest; nearest = d; } else if (d < second) { second = d; }
-        }
-    }
-    return 1.0 - smoothstep(0.0, 0.09, sqrt(second) - sqrt(nearest));
-}
-
 // Cheap domain-warped caustic network.
 static float caustic(float2 p, float t) {
     float2 q = p;
@@ -60,16 +40,25 @@ static float caustic(float2 p, float t) {
     return pow(saturate(1.0 - accumulated / 3.0), 5.0);
 }
 
+// Sampling outside the layer returns transparent black and leaves dark seams at the glass.
+static half4 sampleInterior(SwiftUI::Layer layer, float2 size, float2 position) {
+    return layer.sample(clamp(position, float2(0.5), max(size - 0.5, float2(0.5))));
+}
+
 [[ stitchable ]] half4 water(float2 position, SwiftUI::Layer layer, float4 bounds,
                              float time, float level,
                              device const float *heights, int heightCount,
                              device const float *particles, int particleFloats,
-                             float4 hang, float clarity, float frost, half4 tint, float heat)
+                             float4 hang, float clarity, float frost, half4 tint, float heat, float compact, float opaque)
 {
     float2 size = bounds.zw;
-    half4 base = layer.sample(position);
+    half4 base = sampleInterior(layer, size, position);
 
-    float surfaceY = size.y * (1.0 - level) - heightAt(position.x, size.x, heights, heightCount);
+    // Capillary rise at the glass is subtle and fades out for empty/full vessels.
+    float wallDistance = min(position.x, size.x - position.x);
+    float wetting = smoothstep(0.0, 0.06, level) * (1.0 - smoothstep(0.94, 1.0, level));
+    float meniscus = exp(-wallDistance / mix(6.0, 2.0, compact)) * wetting * mix(1.4, 0.65, compact);
+    float surfaceY = size.y * (1.0 - level) - heightAt(position.x, size.x, heights, heightCount) - meniscus;
     float bodyField = surfaceY - position.y; // < 0 inside the main body of water
     float field = bodyField;
 
@@ -82,25 +71,25 @@ static float caustic(float2 p, float t) {
         if (p.w != 0.0) continue;
         float d = length(position - p.xy) - p.z;
         if (d < nearestDistance) { nearestDistance = d; lensCenter = p.xy; lensRadius = p.z; }
-        field = smoothMin(field, d, 4.0 + p.z * 0.8);
+        field = smoothMin(field, d, mix(2.5, 0.6, compact) + p.z * 0.3);
     }
 
     if (hang.z > 0.5) {
         float dropDistance = length(position - hang.xy) - hang.z;
         // A short neck at the rim so the droplet clings to the top edge.
-        float lip = max(position.y - 1.5, abs(position.x - hang.x) - hang.z * 0.75);
-        field = smoothMin(field, smoothMin(dropDistance, lip, 7.0), 8.0);
+        float lip = max(max(-position.y, position.y - hang.y), abs(position.x - hang.x) - hang.z * 0.18);
+        field = smoothMin(field, smoothMin(dropDistance, lip, mix(3.0, 0.8, compact)), mix(3.0, 0.8, compact));
         if (dropDistance < nearestDistance) { nearestDistance = dropDistance; lensCenter = hang.xy; lensRadius = hang.z; }
     }
 
     if (field > 1.5) {
-        if (heat < 0.01) return base;
+        if (heat < 0.01 || opaque > 0.5) return base;
         // Heat haze above the water: shimmering air and a warm glow, strongest near the surface.
         float above = max(surfaceY - position.y, 0.0);
         float strength = heat * exp(-above / max(size.y * 0.35, 1.0));
-        float2 shimmer = float2(sin(position.y * 0.11 + time * 5.0) + sin(position.y * 0.23 - time * 3.1), 0.0);
-        half4 hazy = layer.sample(position + shimmer * strength * 1.8);
-        return mix(hazy, half4(1.0, 0.62, 0.30, 1.0), half(strength * 0.16));
+        float2 shimmer = float2(sin(position.y * 0.11 + time * 1.2) + sin(position.y * 0.23 - time * 0.9), 0.0);
+        half4 hazy = sampleInterior(layer, size, position + shimmer * strength * 0.6);
+        return mix(hazy, half4(1.0, 0.62, 0.30, 1.0), half(strength * 0.06));
     }
 
     // ---- Inside the water ----
@@ -109,33 +98,34 @@ static float caustic(float2 p, float t) {
     float slope = (heightAt(position.x - 2.0, size.x, heights, heightCount)
                    - heightAt(position.x + 2.0, size.x, heights, heightCount)) * 0.25;
 
-    float2 offset = float2(slope * 22.0 * nearSurface, abs(slope) * 6.0 * nearSurface);
-    offset += float2(sin(position.y * 0.045 + time * 1.3), cos(position.x * 0.038 - time * 1.1)) * 1.6;
+    float2 offset = float2(clamp(slope, -0.8, 0.8) * 8.0, abs(slope) * 2.0) * nearSurface;
 
     bool inDrop = bodyField > 0.0;
     if (inDrop && lensRadius > 0.0) {
         offset = -(position - lensCenter) / max(lensRadius, 1.0) * lensRadius * 0.6; // droplets act as lenses
     }
 
-    half4 refracted = layer.sample(position + offset);
+    half4 refracted = opaque > 0.5 ? base : sampleInterior(layer, size, position + offset);
     float murk = 1.0 - clarity;
-    if (murk > 0.01) {
-        half4 blurred = (layer.sample(position + offset + float2( 5.0,  3.0)) +
-                         layer.sample(position + offset + float2(-4.0,  5.0)) +
-                         layer.sample(position + offset + float2( 3.0, -5.0)) +
-                         layer.sample(position + offset + float2(-5.0, -3.0))) * 0.25h;
+    if (murk > 0.01 && opaque < 0.5) {
+        half4 blurred = (sampleInterior(layer, size, position + offset + float2( 5.0,  3.0)) +
+                         sampleInterior(layer, size, position + offset + float2(-4.0,  5.0)) +
+                         sampleInterior(layer, size, position + offset + float2( 3.0, -5.0)) +
+                         sampleInterior(layer, size, position + offset + float2(-5.0, -3.0))) * 0.25h;
         refracted = mix(refracted, blurred, half(murk));
     }
 
     float deep = smoothstep(0.0, size.y * 0.8, depth);
-    half3 color = mix(refracted.rgb, tint.rgb, half(0.20 + 0.40 * deep));
-    color = mix(color, half3(0.34, 0.31, 0.20), half(murk * (0.40 + 0.30 * deep)));
+    half3 color = mix(refracted.rgb, tint.rgb, half(0.12 + 0.24 * deep));
+    color = mix(color, mix(tint.rgb, half3(0.40), 0.65h), half(murk * (0.28 + 0.20 * deep)));
 
     // Caustics only in clear water.
-    color += half3(caustic(position * 0.018, time * 0.8) * clarity * (0.30 + 0.70 * nearSurface) * 0.24);
+    if (compact < 0.5 && opaque < 0.5) {
+        color += half3(caustic(position * 0.009, time * 0.16) * clarity * deep * 0.035);
+    }
 
     // Sub-surface glow just under the meniscus.
-    if (!inDrop) { color += half3(exp(-depth / 9.0) * 0.12); }
+    if (!inDrop) { color += half3(exp(-depth / mix(4.0, 1.5, compact)) * 0.045); }
 
     // Bubbles.
     for (int k = 0; k < particleCount; k++) {
@@ -145,17 +135,19 @@ static float caustic(float2 p, float t) {
         float ring = 1.0 - smoothstep(0.0, 1.2, abs(d - p.z));
         float fill = (1.0 - smoothstep(0.0, p.z, d)) * 0.10;
         float highlight = 1.0 - smoothstep(0.0, p.z * 0.32, length(position - p.xy + float2(p.z * 0.38)));
-        color += half3(ring * 0.50 + fill + highlight * 0.45);
+        color += half3(ring * 0.18 + fill * 0.4 + highlight * 0.22);
     }
 
     // Meniscus and droplet rims, plus foam on steep crests.
-    float rim = 1.0 - smoothstep(0.0, 2.2, abs(field));
+    float rim = 1.0 - smoothstep(0.0, mix(1.1, 0.65, compact), abs(field));
     float foam = smoothstep(0.35, 1.2, abs(slope)) * exp(-depth / 6.0);
-    color = mix(color, half3(1.0), half(saturate(rim * 0.65 + foam * 0.5)));
+    color = mix(color, half3(1.0), half(saturate(rim * 0.28 + foam * 0.12)));
 
     if (frost > 0.01) {
-        float mask = frost * (0.22 + 0.78 * voronoiEdge(position * 0.045));
-        color = mix(color, half3(0.90, 0.95, 1.0), half(mask * 0.55));
+        // A soft veil gathers against the glass; sharp crystal networks read as cracked glass.
+        float edgeFrost = exp(-wallDistance / 12.0) + exp(-(size.y - position.y) / 10.0);
+        float mask = frost * (0.12 + 0.10 * saturate(edgeFrost));
+        color = mix(color, half3(0.90, 0.95, 1.0), half(mask));
     }
 
     float alpha = (inDrop && hang.w > 0.0 && hang.w < 0.75 && lensRadius == hang.z) ? 0.55 : 1.0;

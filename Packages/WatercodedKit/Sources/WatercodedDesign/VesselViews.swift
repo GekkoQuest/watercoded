@@ -12,10 +12,19 @@ public struct VesselGlyph: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
         WaterSurfaceView(vessel: vessel, role: .glyph, tint: tint)
-            .clipShape(shape)
-            .overlay { shape.strokeBorder(.primary.opacity(0.18), lineWidth: 0.75) }
+            .clipShape(RoundedRectangle(cornerRadius: Radius.small - Spacing.xxSmall, style: .continuous))
+            .padding(Spacing.xxSmall)
+            .background(.primary.opacity(0.025), in: shape)
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [.primary.opacity(0.22), .primary.opacity(0.08), .primary.opacity(0.16)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ), lineWidth: 0.75
+                )
+            }
             .frame(width: Metrics.glyphSize.width, height: Metrics.glyphSize.height)
             .accessibilityHidden(true)
     }
@@ -38,6 +47,6 @@ public struct ComposerVessel: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         WaterSurfaceView(vessel: vessel, role: .panel, tint: tint)
             .clipShape(shape)
-            .overlay { shape.strokeBorder(.primary.opacity(0.14), lineWidth: 1) }
+            .overlay { shape.strokeBorder(.primary.opacity(0.10), lineWidth: 0.75) }
     }
 }

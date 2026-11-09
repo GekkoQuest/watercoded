@@ -55,6 +55,7 @@ final class WaterSurface {
     private var hangOffset: SIMD2<Float> = .zero
     private var hangOffsetVelocity: SIMD2<Float> = .zero
     private var extraDamping: Float = 0
+    private var waveTime: Float = 0
 
     /// Strongest edge-column speed in the last step (drives "wall slam" haptics).
     private(set) var wallImpact: Float = 0
@@ -75,11 +76,8 @@ final class WaterSurface {
 
     func resize(to newSize: SIMD2<Float>) {
         guard newSize.x > 4, newSize.y > 4 else { return }
-        let delta = (newSize.x - size.x) * 0.02
+        // Layout changes should not look like activity from the agent.
         size = newSize
-        if abs(delta) > 0.1 {
-            impulse(atX: newSize.x * 0.5, strength: min(abs(delta), 40), width: 12)
-        }
     }
 
     func surfaceY(atX x: Float) -> Float {
@@ -198,7 +196,7 @@ final class WaterSurface {
         level += levelVelocity * dt
 
         stepColumns(dt: dt, accel: accel * gain)
-        roughen(turbulence: turbulence, verticalAccel: accel.y * gain)
+        driveRipples(dt: dt, turbulence: turbulence, verticalAccel: accel.y * gain)
         conserveVolume()
 
         wallImpact = max(abs(velocities[0]), abs(velocities[columns - 1]))
@@ -225,7 +223,8 @@ final class WaterSurface {
         let currentEnergy = energy
         let restDamping: Float = currentEnergy < 3 ? 2.8 * (1 - currentEnergy / 3) : 0
         let damping = tuning.damping + extraDamping + restDamping
-        let limit = size.y * 0.42
+        // Keep the surface within the available water and headroom.
+        let limit = size.y * min(0.24, max(0, min(level, 1 - level)) * 0.8)
         let ax = max(-24000, min(24000, accel.x))
 
         for _ in 0 ..< substeps {
@@ -244,11 +243,18 @@ final class WaterSurface {
         }
     }
 
-    private func roughen(turbulence: Float, verticalAccel: Float) {
-        let roughness = abs(max(-24000, min(24000, verticalAccel))) * 0.0009 + turbulence * 0.9
-        guard roughness > 0.001 else { return }
-        for _ in 0 ..< max(1, columns / 24) {
-            velocities[Int.random(in: 0 ..< columns)] += Float.random(in: -1 ... 1) * roughness * 60
+    private func driveRipples(dt: Float, turbulence: Float, verticalAccel: Float) {
+        waveTime += dt
+        let agitation = min(abs(verticalAccel), 24000) * 0.00015
+        let strength = (turbulence * 16 + agitation) * scale
+        guard strength > 0.001 else { return }
+        // Broad, continuous modes avoid frame-rate-dependent noise and preserve volume.
+        // Different frequencies keep the motion from reading as a looping sine-wave graphic.
+        for index in 0 ..< columns {
+            let x = Float(index) / Float(columns - 1)
+            let swell = cos(x * .pi) * sin(waveTime * 1.65)
+            let ripple = cos(x * .pi * 2) * sin(waveTime * 2.31 + 0.8) * 0.35
+            velocities[index] += (swell + ripple) * strength * dt
         }
     }
 
@@ -330,7 +336,7 @@ final class WaterSurface {
 
     private func stepBubble(_ bubble: inout WaterParticle, dt: Float) -> Bool {
         bubble.velocity.y += (-70 - bubble.velocity.y) * 2.5 * dt
-        bubble.position.x += sin(bubble.age * 7 + bubble.seed) * 18 * dt
+        bubble.position.x += sin(bubble.age * 2.4 + bubble.seed) * 6 * dt
         bubble.position.y += bubble.velocity.y * dt
         if bubble.position.y - bubble.radius <= surfaceY(atX: bubble.position.x) {
             impulse(atX: bubble.position.x, strength: -14, width: 2) // a tiny upward pop
@@ -349,7 +355,7 @@ final class WaterSurface {
             let target = (7 + min(pending, 20) / 20 * 7) * scale
             hangRadius += (target - hangRadius) * min(1, dt * 4)
             let stiffness: Float = 140
-            let damping: Float = 5
+            let damping: Float = 20
             hangOffsetVelocity += (-stiffness * hangOffset - damping * hangOffsetVelocity - accel * 0.006) * dt
             hangOffset += hangOffsetVelocity * dt
             hangOffset = simd_clamp(hangOffset, SIMD2(-hangRadius, -2), SIMD2(hangRadius, hangRadius * 0.6))
