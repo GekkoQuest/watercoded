@@ -1,4 +1,5 @@
 import AgentKit
+import Delegation
 import Foundation
 import GitKit
 import Observation
@@ -21,6 +22,12 @@ public final class Workspace {
     @ObservationIgnored let repository: any WorkspaceRepository
     @ObservationIgnored let git: GitClient
     @ObservationIgnored var pullRequestWatch: Task<Void, Never>?
+    @ObservationIgnored var delegationWatch: Task<Void, Never>?
+    /// Delegated sessions whose parent is waiting for their answer (child id → the parent's tool call).
+    @ObservationIgnored var delegationWaiters: [CurrentID: CheckedContinuation<DelegationOutcome, Never>] = [:]
+    /// The app binary, which serves the `delegate` MCP server (`--delegate-mcp`); `nil` turns delegation off.
+    @ObservationIgnored public var delegationExecutable: URL?
+    @ObservationIgnored let delegationMailbox: DelegationMailbox
     @ObservationIgnored let worktrees: WorktreeManager
     /// Where ``startDemo()`` keeps its sample repository.
     @ObservationIgnored let demoRoot: URL
@@ -37,8 +44,10 @@ public final class Workspace {
         git: GitClient = GitClient(),
         worktrees: WorktreeManager = WorktreeManager(),
         demoRoot: URL = Workspace.defaultDemoRoot,
-        sessionsRoot: URL = Workspace.defaultSessionsRoot
+        sessionsRoot: URL = Workspace.defaultSessionsRoot,
+        delegationMailbox: DelegationMailbox = DelegationMailbox()
     ) {
+        self.delegationMailbox = delegationMailbox
         self.registry = registry
         self.repository = repository
         self.git = git
@@ -72,6 +81,7 @@ public final class Workspace {
         currents = controllers
         isLoaded = true
         startWatchingPullRequests()
+        startWatchingDelegations()
 
         for controller in controllers
             where controller.current.status == .flowing || controller.current.status == .waiting {
@@ -95,6 +105,7 @@ public final class Workspace {
     /// Prepares for quitting: background sessions are detached (they keep running), others stop.
     public func shutdown() async {
         pullRequestWatch?.cancel()
+        delegationWatch?.cancel()
         for controller in currents {
             await controller.prepareForQuit()
         }
@@ -222,11 +233,13 @@ public final class Workspace {
     /// Deletes a Current's record; optionally removes its worktree checkout (the branch is kept).
     public func delete(_ id: CurrentID, removingWorktree: Bool) async throws {
         guard let controller = controller(id) else { return }
+        abandonDelegation(id)
         await controller.stopSession()
         controller.discard()
         if let pool = pool(controller.current.poolID) {
             try? await git.deleteRefs(withPrefix: "refs/watercoded/\(id)/", in: pool.rootURL)
-            if removingWorktree {
+            // A delegated session shares its parent's folder: never remove it from under the parent.
+            if removingWorktree, controller.current.parentID == nil {
                 try await worktrees.removeChannel(controller.current.channel, from: pool, force: true)
             }
         }
@@ -265,7 +278,12 @@ public final class Workspace {
             let worktrees = worktrees
             controller.restoreChannel = { channel in try await worktrees.restoreChannelIfNeeded(channel, in: pool) }
         }
-        controller.onAttention = { [weak self] controller, event in self?.onAttention?(controller, event) }
+        controller.onAttention = { [weak self] controller, event in
+            self?.delegatedTurnEnded(controller, event)
+            self?.onAttention?(controller, event)
+        }
+        controller.mcpServers = { [weak self] in self?.mcpServers(for: controller) ?? [] }
+        controller.onSettle = { [weak self] id in self?.abandonDelegation(id) }
         controller.approvalRules = { [weak self] in self?.pool(poolID)?.approvalRules ?? [] }
         controller.verifySettings = { [weak self] in self?.pool(poolID)?.verify }
         controller.onAlwaysAllow = { [weak self] rule in self?.addApprovalRule(rule, to: poolID) }

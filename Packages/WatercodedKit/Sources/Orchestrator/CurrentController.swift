@@ -69,6 +69,10 @@ public final class CurrentController: Identifiable {
     @ObservationIgnored var snapshotter: (@Sendable (URL, String, String) async -> String?)?
     @ObservationIgnored var summarizer: (any CurrentSummarizer)?
     @ObservationIgnored var additionalDirectories: () -> [URL] = { [] }
+    /// Called when the Current is archived (answers a parent still waiting on it).
+    @ObservationIgnored var onSettle: ((CurrentID) -> Void)?
+    /// MCP servers Watercoded adds to this Current's agent (its `delegate` tool).
+    @ObservationIgnored var mcpServers: () -> [MCPServer] = { [] }
     /// Recreates the channel's worktree from its branch if it was removed while the Current was archived.
     @ObservationIgnored var restoreChannel: (@Sendable (Channel) async throws -> Void)?
     /// Prepares a new worktree before the agent first starts; cleared once it has run.
@@ -225,13 +229,6 @@ public final class CurrentController: Identifiable {
 
     // MARK: Lifecycle
 
-    /// Ends the session and marks the Current as done.
-    public func settle() async {
-        await stopSession()
-        update { $0.status = .settled }
-        scheduleSave()
-    }
-
     // MARK: Settings
 
     /// Changes permissions. Applied live when the provider supports it, otherwise on the next message.
@@ -342,7 +339,9 @@ public final class CurrentController: Identifiable {
             relayDirectory: provider.descriptor.capabilities.contains(.backgroundSessions) ? relayDirectory() : nil,
             branchAt: current.pendingBranchAt
         )
-        let session = try await provider.startSession(configuration)
+        var withServers = configuration
+        withServers.mcpServers = mcpServers()
+        let session = try await provider.startSession(withServers)
         attach(session)
         if let handle = await session.relayHandle() {
             update { $0.relay = handle }

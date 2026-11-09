@@ -35,14 +35,17 @@ extension Workspace {
     public func worktreeInventory() async -> [WorktreeInfo] {
         var items: [WorktreeInfo] = []
         for url in worktrees.existingWorktrees() {
-            let owner = currents.first { $0.current.channel.kind == .worktree && Self.samePath(
-                $0.current.channel.url,
-                url
-            ) }
-            let use: WorktreeInfo.Use = switch owner?.current.status {
-            case nil: .unused
-            case .settled?: .archived
-            default: .active
+            // Delegated sessions share their parent's folder, so look at every session using it.
+            let owners = currents.filter {
+                $0.current.channel.kind == .worktree && Self.samePath($0.current.channel.url, url)
+            }
+            let owner = owners.first { $0.current.parentID == nil } ?? owners.first
+            let use: WorktreeInfo.Use = if owners.isEmpty {
+                .unused
+            } else if owners.allSatisfy({ $0.current.status == .settled }) {
+                .archived
+            } else {
+                .active
             }
             let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             await items.append(WorktreeInfo(

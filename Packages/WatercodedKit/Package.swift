@@ -41,6 +41,7 @@ let package = Package(
         .library(name: "CodexProvider", targets: ["CodexProvider"]),
         .library(name: "ReplayProvider", targets: ["ReplayProvider"]),
         .library(name: "OnDeviceIntelligence", targets: ["OnDeviceIntelligence"]),
+        .library(name: "Delegation", targets: ["Delegation"]),
         .executable(name: "watercoded-relay", targets: ["watercoded-relay"])
     ],
     targets: [
@@ -50,10 +51,12 @@ let package = Package(
         .target(name: "ProcessKit", dependencies: ["WatercodedCore"], swiftSettings: strictness),
         .executableTarget(name: "watercoded-relay", dependencies: ["ProcessKit"], swiftSettings: strictness),
         .target(name: "AgentKit", dependencies: ["WatercodedCore", "ProcessKit"], swiftSettings: strictness),
+        // Watercoded's own `delegate` MCP server and the mailbox it shares with the app.
+        .target(name: "Delegation", dependencies: ["WatercodedCore"], swiftSettings: strictness),
         .target(name: "GitKit", dependencies: ["WatercodedCore", "ProcessKit"], swiftSettings: strictness),
         .target(
             name: "Orchestrator",
-            dependencies: ["WatercodedCore", "ProcessKit", "AgentKit", "GitKit"],
+            dependencies: ["WatercodedCore", "ProcessKit", "AgentKit", "GitKit", "Delegation"],
             swiftSettings: strictness
         ),
 
@@ -110,9 +113,13 @@ let package = Package(
         ),
         .testTarget(
             name: "OrchestratorTests",
-            dependencies: ["Orchestrator", "ReplayProvider", "AgentKit", "GitKit", "WatercodedCore"]
+            dependencies: [
+                "Orchestrator", "ReplayProvider", "AgentKit", "GitKit", "WatercodedCore", "Delegation",
+                "ClaudeCodeProvider", "CodexProvider"
+            ]
         ),
         .testTarget(name: "MeniscusTests", dependencies: ["Meniscus"]),
+        .testTarget(name: "DelegationTests", dependencies: ["Delegation", "WatercodedCore"]),
         .testTarget(name: "OnDeviceIntelligenceTests", dependencies: ["OnDeviceIntelligence"])
     ]
 )

@@ -57,10 +57,30 @@ enum CodexRequests {
         if let model = configuration.model, model != "default" {
             parameters["model"] = .string(model)
         }
+        var config: [String: JSONValue] = [:]
         if !configuration.additionalDirectories.isEmpty {
-            parameters["config"] = ["sandbox_workspace_write": [
+            config["sandbox_workspace_write"] = [
                 "writable_roots": .array(configuration.additionalDirectories.map { .string($0.path) })
-            ]]
+            ]
+        }
+        if !configuration.mcpServers.isEmpty {
+            var servers: [String: JSONValue] = [:]
+            for server in configuration.mcpServers {
+                var entry: [String: JSONValue] = [
+                    "command": .string(server.command),
+                    "args": .array(server.arguments.map { .string($0) }),
+                    "env": .object(server.environment.mapValues { .string($0) }),
+                    "tool_timeout_sec": .number(Double(server.toolTimeout.components.seconds))
+                ]
+                if server.isTrusted {
+                    entry["default_tools_approval_mode"] = "approve"
+                }
+                servers[server.name] = .object(entry)
+            }
+            config["mcp_servers"] = .object(servers)
+        }
+        if !config.isEmpty {
+            parameters["config"] = .object(config)
         }
         return parameters
     }

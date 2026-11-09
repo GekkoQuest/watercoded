@@ -52,6 +52,7 @@ project.yml               XcodeGen spec
 - Live tests run the real `claude` CLI and **spend your usage**. They're skipped unless you opt in:
   `WATERCODED_LIVE_CLAUDE=1 make test` (Claude Code) or `WATERCODED_LIVE_CODEX=1 make test` (Codex).
   The MCP live tests start `Tests/Support/elicitation-mcp-server.py` with the system `python3`.
+  `WATERCODED_LIVE_DELEGATION=1` runs agents delegating to each other through the built app (`make build` first).
 - Swift Testing (`import Testing`, `@Test`, `#expect`), one test target per module.
 - Provider translators are tested against recorded fixtures. Re-record them when a CLI changes its format, and redact paths and secrets.
 - Prefer real dependencies in temporary directories (git repos) over mocks, and `ReplayProvider(pace: 0)` for orchestration.

@@ -53,4 +53,12 @@ extension CurrentController {
         }
         scheduleSave()
     }
+
+    /// Ends the session and marks the Current as done.
+    public func settle() async {
+        onSettle?(id)
+        await stopSession()
+        update { $0.status = .settled }
+        scheduleSave()
+    }
 }

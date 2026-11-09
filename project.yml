@@ -50,6 +50,8 @@ targets:
       - package: WatercodedKit
         product: CodexProvider
       - package: WatercodedKit
+        product: Delegation
+      - package: WatercodedKit
         product: ReplayProvider
       - package: WatercodedKit
         product: OnDeviceIntelligence

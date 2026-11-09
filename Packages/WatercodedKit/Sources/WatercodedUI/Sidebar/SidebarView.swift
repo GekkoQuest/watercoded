@@ -55,8 +55,10 @@ struct SidebarView: View {
                             .buttonStyle(.link)
                             .padding(.vertical, Spacing.xSmall)
                     }
-                    ForEach(currents) { controller in
+                    ForEach(Self.nested(currents)) { entry in
+                        let controller = entry.controller
                         CurrentRow(controller: controller, showsPool: false)
+                            .padding(.leading, CGFloat(entry.depth) * Spacing.large)
                             .tag(controller.id)
                             .contextMenu {
                                 CurrentContextMenu(controller: controller, pendingDeletion: $pendingDeletion)
@@ -68,6 +70,32 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+    }
+
+    /// A session followed by the sessions it delegated to (and theirs), indented by depth.
+    struct NestedRow: Identifiable {
+        let controller: CurrentController
+        let depth: Int
+        var id: CurrentID {
+            controller.id
+        }
+    }
+
+    static func nested(_ currents: [CurrentController]) -> [NestedRow] {
+        let ids = Set(currents.map(\.id))
+        var rows: [NestedRow] = []
+        func add(_ controller: CurrentController, depth: Int) {
+            rows.append(NestedRow(controller: controller, depth: depth))
+            for child in currents.filter({ $0.current.parentID == controller.id })
+                .sorted(by: { $0.current.createdAt < $1.current.createdAt }) {
+                add(child, depth: depth + 1)
+            }
+        }
+        // Top level: sessions without a parent here (a parent may have been deleted).
+        for controller in currents where controller.current.parentID.map({ !ids.contains($0) }) ?? true {
+            add(controller, depth: 0)
+        }
+        return rows
     }
 
     private var footer: some View {

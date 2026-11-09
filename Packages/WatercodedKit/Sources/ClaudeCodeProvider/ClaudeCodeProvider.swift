@@ -122,6 +122,9 @@ public struct ClaudeCodeProvider: AgentProvider {
             arguments: ClaudeCodeArguments.make(for: configuration) + extraArguments,
             workingDirectory: configuration.workingDirectory,
             environment: ClaudeCodeArguments.environment(base: environment.environment())
+                .merging(ClaudeCodeArguments.toolTimeout(for: configuration).map { ["MCP_TOOL_TIMEOUT": $0] } ?? [:]) {
+                    $1
+                }
         )
         return try await ClaudeCodeSession.launch(spec, relay: relay, relayDirectory: configuration.relayDirectory)
     }

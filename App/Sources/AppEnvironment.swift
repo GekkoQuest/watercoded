@@ -30,6 +30,7 @@ struct AppEnvironment {
         let workspace = Workspace(registry: registry, repository: FileWorkspaceRepository())
         // Titles and summaries come from Apple's on-device model when Apple Intelligence is available.
         workspace.summarizer = OnDeviceSummarizer()
+        workspace.delegationExecutable = Bundle.main.executableURL // serves the `delegate` MCP tool
         return AppEnvironment(
             workspace: workspace,
             providerStatus: ProviderStatus(registry: registry),

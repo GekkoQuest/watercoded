@@ -16,6 +16,7 @@ small modules with one-way dependencies. The app target is only a composition ro
 | `WatercodedDesign` | Tokens (`Spacing`, `Radius`, `Motion`), glass components, `VesselGlyph` / `ComposerVessel`. | Core, Meniscus |
 | `WatercodedUI` | Features: sidebar, Current screen, transcript, composer, approvals, diff inspector, settings, commands, menu bar extra. | everything above |
 | `ClaudeCodeProvider` | Drives the user's `claude` CLI over stream-json and the stdio control protocol. | Core, AgentKit, ProcessKit |
+| `Delegation` | Watercoded's own `delegate` MCP server (run as `Watercoded --delegate-mcp`) and the file mailbox it shares with the app (ADR 0012). | Core |
 | `CodexProvider` | Drives the user's `codex app-server` over JSON-RPC: threads, turns, approvals, fork (ADR 0011). | Core, AgentKit, ProcessKit |
 | `ReplayProvider` | Scripted offline provider for demos, previews and tests. Records Currents as Codable scripts (`TranscriptRecording`). | Core, AgentKit |
 | `OnDeviceIntelligence` | `CurrentSummarizer` backed by Apple's on-device Foundation Models: titles and progress summaries. | Orchestrator |

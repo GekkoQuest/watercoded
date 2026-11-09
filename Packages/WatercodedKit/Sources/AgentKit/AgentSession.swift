@@ -83,6 +83,8 @@ public struct SessionConfiguration: Sendable, Hashable {
     /// When set (and the provider supports ``ProviderCapabilities/backgroundSessions``), the agent runs
     /// under a relay in this directory and keeps running if the app quits.
     public var relayDirectory: URL?
+    /// Extra MCP servers for this session (e.g. Watercoded's own `delegate` tool).
+    public var mcpServers: [MCPServer] = []
     /// With ``resumeSessionID``: start a *new* session holding the conversation up to this checkpoint.
     /// Requires ``ProviderCapabilities/branching``.
     public var branchAt: String?
@@ -105,6 +107,34 @@ public struct SessionConfiguration: Sendable, Hashable {
         self.additionalDirectories = additionalDirectories
         self.relayDirectory = relayDirectory
         self.branchAt = branchAt
+    }
+}
+
+/// A stdio MCP server to start with a session.
+public struct MCPServer: Sendable, Hashable {
+    public var name: String
+    public var command: String
+    public var arguments: [String]
+    public var environment: [String: String]
+    /// The server's tools run without asking (only for Watercoded's own servers).
+    public var isTrusted: Bool
+    /// How long one tool call may take. Delegated work can take a while.
+    public var toolTimeout: Duration
+
+    public init(
+        name: String,
+        command: String,
+        arguments: [String] = [],
+        environment: [String: String] = [:],
+        isTrusted: Bool = false,
+        toolTimeout: Duration = .seconds(120)
+    ) {
+        self.name = name
+        self.command = command
+        self.arguments = arguments
+        self.environment = environment
+        self.isTrusted = isTrusted
+        self.toolTimeout = toolTimeout
     }
 }
 

@@ -79,7 +79,8 @@ struct CurrentScreen: View {
                     ? "Run this repository's check command now"
                     : "Set a check command in the repository's settings to verify work")
             Button("Land", systemImage: "arrow.down.to.line") { window.landing = controller.id }
-                .disabled(controller.isTurnActive || controller.current.status == .settled)
+                .disabled(controller.isTurnActive || controller.current.status == .settled
+                    || controller.current.parentID != nil) // land through the session that delegated
                 .help("Commit this session's work, then merge it or open a pull request")
             Button("Changes", systemImage: "sidebar.right") {
                 window.isInspectorPresented.toggle()

@@ -37,6 +37,9 @@ public struct Current: Identifiable, Hashable, Codable, Sendable {
     public var environment: AgentEnvironment?
     /// The GitHub issue this Current was started from, closed by the pull request Land opens.
     public var issue: IssueReference?
+    /// The Current that delegated work to this one (see `delegate`), if any. A child works in its parent's
+    /// folder and is shown under it.
+    public var parentID: CurrentID?
     /// For a branched Current: the checkpoint its first session forks from. Cleared once it has.
     public var pendingBranchAt: String?
     /// The pull request Land opened, watched for checks, reviews and merging.

@@ -1,4 +1,5 @@
 import AgentKit
+import Delegation
 import Foundation
 import GitKit
 import ProcessKit
@@ -119,7 +120,10 @@ struct WorkspaceTests {
         try await waitUntil { controller.isAwaitingUser }
         await fixture.workspace.shutdown()
 
-        let restored = Workspace(registry: fixture.registry, repository: fixture.storage)
+        let restored = Workspace(
+            registry: fixture.registry, repository: fixture.storage,
+            delegationMailbox: fixture.workspace.delegationMailbox
+        )
         await restored.load()
         #expect(restored.pools.map(\.name) == [pool.name])
         let restoredController = try #require(restored.currents.first)
@@ -396,7 +400,9 @@ struct Fixture {
             registry: registry,
             repository: storage,
             worktrees: WorktreeManager(root: base.appending(path: "worktrees")),
-            demoRoot: base.appending(path: "demo")
+            demoRoot: base.appending(path: "demo"),
+            // Never the real ~/.watercoded/delegation: a running app would see the tests' requests.
+            delegationMailbox: DelegationMailbox(root: base.appending(path: "delegation"))
         )
         return Fixture(
             repository: repo,

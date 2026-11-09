@@ -37,7 +37,28 @@ enum ClaudeCodeArguments {
         for directory in configuration.additionalDirectories {
             arguments += ["--add-dir", directory.path]
         }
+        if !configuration.mcpServers.isEmpty {
+            var servers: [String: JSONValue] = [:]
+            for server in configuration.mcpServers {
+                servers[server.name] = [
+                    "command": .string(server.command),
+                    "args": .array(server.arguments.map { .string($0) }),
+                    "env": .object(server.environment.mapValues { .string($0) })
+                ]
+            }
+            arguments += ["--mcp-config", JSONValue.object(["mcpServers": .object(servers)]).compactString()]
+            let trusted = configuration.mcpServers.filter(\.isTrusted).map { "mcp__\($0.name)" }
+            if !trusted.isEmpty {
+                arguments += ["--allowedTools", trusted.joined(separator: ",")]
+            }
+        }
         return arguments
+    }
+
+    /// The longest tool timeout any of the session's MCP servers needs, for `MCP_TOOL_TIMEOUT` (ms).
+    static func toolTimeout(for configuration: SessionConfiguration) -> String? {
+        guard let longest = configuration.mcpServers.map(\.toolTimeout).max() else { return nil }
+        return String(longest.components.seconds * 1000)
     }
 
     /// Claude Code's name for a permission mode (CLI flag and `set_permission_mode`).

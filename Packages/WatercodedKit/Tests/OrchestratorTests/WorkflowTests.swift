@@ -138,7 +138,10 @@ struct WorkflowTests {
         await fixture.workspace.shutdown()
         #expect(controller.current.interruptedByQuit == true)
 
-        let relaunched = Workspace(registry: fixture.registry, repository: fixture.storage)
+        let relaunched = Workspace(
+            registry: fixture.registry, repository: fixture.storage,
+            delegationMailbox: fixture.workspace.delegationMailbox
+        )
         await relaunched.load()
         let restored = try #require(relaunched.currents.first)
         #expect(restored.current.interruptedByQuit == true)
