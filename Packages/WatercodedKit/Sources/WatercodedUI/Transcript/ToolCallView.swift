@@ -25,12 +25,17 @@ struct ToolCallView: View {
                     }
                     .padding(.leading, Spacing.large)
                 }
-                if record.input != "{}" {
-                    CodeBlock(title: "Input", text: record.input)
+                VStack(alignment: .leading, spacing: Spacing.medium) {
+                    if record.kind == .shell {
+                        ShellToolInputView(input: record.input)
+                    } else if (try? JSONValue(parsing: record.input)) != .object([:]) {
+                        ToolCodeBlock(title: "Input", text: record.input)
+                    }
+                    if let output = record.output, !output.isEmpty {
+                        ToolCodeBlock(title: "Output", text: output)
+                    }
                 }
-                if let output = record.output, !output.isEmpty {
-                    CodeBlock(title: "Output", text: output)
-                }
+                .padding(.top, Spacing.xSmall)
             }
         }
         .padding(.horizontal, Spacing.medium)
@@ -99,24 +104,6 @@ private struct SubagentStepRow: View {
                 .truncationMode(.middle)
             Spacer(minLength: Spacing.small)
             ToolStatusIcon(status: record.status)
-        }
-    }
-}
-
-private struct CodeBlock: View {
-    let title: String
-    let text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xSmall) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            ScrollView(.vertical) {
-                Text(text.count > 20000 ? String(text.prefix(20000)) + "\n…" : text)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
         }
     }
 }
