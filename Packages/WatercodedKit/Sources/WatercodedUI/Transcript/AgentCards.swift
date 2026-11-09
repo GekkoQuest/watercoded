@@ -130,7 +130,11 @@ struct QuestionCard: View {
                     }
                     Text(question.text).font(.headline)
                     if let answer = record.answers?[question.text] {
-                        Label(answer, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label {
+                            Text(answer).foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                        }
                     } else if isPending {
                         options(for: question)
                     }
@@ -144,7 +148,7 @@ struct QuestionCard: View {
         }
         .padding(Spacing.large)
         .disabled(isSubmitting)
-        .glassEffect(.regular.tint(.orange.opacity(0.12)), in: RoundedRectangle(cornerRadius: Radius.large))
+        .glassEffect(.regular.tint(.accentColor.opacity(0.06)), in: RoundedRectangle(cornerRadius: Radius.large))
     }
 
     private var isPending: Bool {
