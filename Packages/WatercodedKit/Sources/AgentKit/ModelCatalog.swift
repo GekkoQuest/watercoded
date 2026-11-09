@@ -12,13 +12,23 @@ public struct ModelCatalog: Sendable, Hashable {
         public let defaultEffort: String?
         /// Shown in the main model list (older models are reachable through Custom…).
         public let isFeatured: Bool
+        /// Effort levels this model accepts, lowest first, when the agent says.
+        public let effortLevels: [String]?
 
-        public init(id: String, name: String, family: String?, defaultEffort: String?, isFeatured: Bool) {
+        public init(
+            id: String,
+            name: String,
+            family: String?,
+            defaultEffort: String?,
+            isFeatured: Bool,
+            effortLevels: [String]? = nil
+        ) {
             self.id = id
             self.name = name
             self.family = family
             self.defaultEffort = defaultEffort
             self.isFeatured = isFeatured
+            self.effortLevels = effortLevels
         }
     }
 

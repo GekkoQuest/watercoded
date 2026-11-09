@@ -87,6 +87,14 @@ struct NewCurrentSheet: View {
             modelID = selectedDescriptor?.defaultModel?.id
             effort = nil
         }
+        .onChange(of: modelID) {
+            // A level the newly chosen model doesn't support falls back to Auto.
+            guard let descriptor = selectedDescriptor, let chosen = effort else { return }
+            let options = ModelOptions(descriptor: descriptor, providers: providers, workspace: workspace)
+            if !options.effortLevels(forRequested: requestedModel(descriptor)).contains(chosen) {
+                effort = nil
+            }
+        }
     }
 
     @ViewBuilder private var agentSection: some View {
@@ -118,7 +126,9 @@ struct NewCurrentSheet: View {
             if !descriptor.effortLevels.isEmpty {
                 Picker("Effort", selection: $effort) {
                     Text(options.autoEffortName(forRequested: requestedModel(descriptor))).tag(String?.none)
-                    ForEach(descriptor.effortLevels, id: \.self) { Text(options.effortName($0)).tag(Optional($0)) }
+                    ForEach(options.effortLevels(forRequested: requestedModel(descriptor)), id: \.self) {
+                        Text(options.effortName($0)).tag(Optional($0))
+                    }
                 }
             }
             Picker("Permissions", selection: $permissionMode) {

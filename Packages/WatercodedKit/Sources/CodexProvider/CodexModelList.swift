@@ -51,7 +51,8 @@ enum CodexModelList {
                 name: entry["displayName"]?.string ?? id,
                 family: nil,
                 defaultEffort: entry["defaultReasoningEffort"]?.string,
-                isFeatured: true
+                isFeatured: true,
+                effortLevels: entry["supportedReasoningEfforts"]?.array?.compactMap { $0["reasoningEffort"]?.string }
             )
         }
         guard !models.isEmpty else { return nil }

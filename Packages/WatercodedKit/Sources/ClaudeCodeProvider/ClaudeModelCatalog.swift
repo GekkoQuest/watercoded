@@ -36,7 +36,8 @@ enum ClaudeModelCatalog {
                 name: name,
                 family: runtime?["family"] as? String,
                 defaultEffort: runtime?["default_effort"] as? String,
-                isFeatured: entry["section"] as? String == "main"
+                isFeatured: entry["section"] as? String == "main",
+                effortLevels: runtime?["effort_levels"] as? [String]
             )
         }
         var aliases: [String: String] = [:]

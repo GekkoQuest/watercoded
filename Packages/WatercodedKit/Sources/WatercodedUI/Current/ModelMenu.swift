@@ -38,7 +38,9 @@ struct ModelMenu: View {
                 if !descriptor.effortLevels.isEmpty {
                     Section("Effort") {
                         effortButton(nil, title: options.autoEffortName(forRequested: controller.current.model))
-                        ForEach(descriptor.effortLevels, id: \.self) { effortButton($0, title: options.effortName($0)) }
+                        ForEach(options.effortLevels(forRequested: controller.current.model), id: \.self) {
+                            effortButton($0, title: options.effortName($0))
+                        }
                     }
                 }
             } label: {

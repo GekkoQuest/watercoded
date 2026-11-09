@@ -248,6 +248,9 @@ struct CodexRequestTests {
         #expect(catalog.model(named: defaultID) != nil)
         #expect(catalog.models.allSatisfy { !$0.name.isEmpty })
         #expect(catalog.models.contains { $0.defaultEffort != nil })
+        // Each model lists only the efforts it accepts (GPT-6-Luna has no "ultra").
+        #expect(catalog.model(named: "gpt-6-luna")?.effortLevels?.contains("ultra") == false)
+        #expect(catalog.model(named: "gpt-6.1-sol")?.effortLevels?.contains("ultra") == true)
     }
 
     @Test func `config values are read from the top of config toml`() {

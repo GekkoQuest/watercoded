@@ -55,6 +55,16 @@ public struct ModelOptions {
             ?? ModelName.display(requested)
     }
 
+    /// The effort levels the requested model (`nil` = Default) accepts: from the catalog when known,
+    /// otherwise every level the provider supports.
+    public func effortLevels(forRequested requested: String?) -> [String] {
+        let model = requested ?? defaultModelID
+        guard let levels = model.flatMap({ catalog?.model(named: $0)?.effortLevels }), !levels.isEmpty else {
+            return descriptor.effortLevels
+        }
+        return levels
+    }
+
     /// "Auto (Medium)" when the effort Auto uses for this model is known, otherwise "Auto".
     public func autoEffortName(forRequested requested: String?) -> String {
         let model = requested ?? defaultModelID
