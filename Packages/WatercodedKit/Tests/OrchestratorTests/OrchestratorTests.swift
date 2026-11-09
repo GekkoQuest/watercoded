@@ -68,6 +68,7 @@ struct WorkspaceTests {
         // The turn was snapshotted, and the summarizer replaced the prompt-based title.
         try await waitUntil { controller.current.turnSnapshots?.first?.afterCommit != nil }
         try await waitUntil { controller.current.titleSource == .generated }
+        try await waitUntil { controller.current.summary != nil } // written just after the title
         #expect(controller.current.title == "Generated title")
         #expect(controller.current.summary == "Generated summary")
     }

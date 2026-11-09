@@ -100,8 +100,15 @@ public enum RelayHost {
                 }
             }
 
-            try process.run()
-            try "\(getpid())".write(to: directory.appending(path: RelayFiles.pid), atomically: true, encoding: .utf8)
+            // Mark the relay alive before the agent starts, so nobody can see output from a relay that looks dead.
+            let pidFile = directory.appending(path: RelayFiles.pid)
+            try "\(getpid())".write(to: pidFile, atomically: true, encoding: .utf8)
+            do {
+                try process.run()
+            } catch {
+                try? FileManager.default.removeItem(at: pidFile)
+                throw error
+            }
         }
 
         private func handleInput(_ line: String) {
