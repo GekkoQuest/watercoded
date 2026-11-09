@@ -13,6 +13,9 @@ configFiles:
   Release: Configs/Release.xcconfig
 
 packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
   WatercodedKit:
     path: Packages/WatercodedKit
 
@@ -28,15 +31,22 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Watercoded
-        CFBundleName: Watercoded
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        CFBundleName: $(PRODUCT_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHighResolutionCapable: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
+        SUFeedURL: https://github.com/GekkoQuest/watercoded/releases/latest/download/appcast.xml
+        SUPublicEDKey: uLq2LpG8aR2ERR1kcpQ1NTfkl7KoSocgl+Jd5J3iGwI=
+        SUEnableAutomaticChecks: true
+        SUAllowsAutomaticUpdates: false
+        SUVerifyUpdateBeforeExtraction: true
+        SURequireSignedFeed: true
     dependencies:
+      - package: Sparkle
       - package: WatercodedKit
         product: WatercodedUI
       - package: WatercodedKit
