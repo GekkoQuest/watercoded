@@ -3,6 +3,13 @@ import Foundation
 import WatercodedCore
 
 extension CurrentController {
+    func clearPendingInteractions() {
+        pendingPermissions.removeAll()
+        pendingPlan = nil
+        pendingQuestion = nil
+        pendingForm = nil
+    }
+
     /// One flat dispatch over every agent event; each case delegates to a focused handler.
     func handle(_ event: AgentEvent) {
         switch event {

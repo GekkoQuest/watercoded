@@ -64,6 +64,15 @@ extension Workspace {
     /// then keeps its worktree. Returns the worktrees kept for that reason.
     @discardableResult
     public func removeWorktrees(_ items: [WorktreeInfo]) async throws -> [WorktreeInfo] {
+        let worktrees = worktrees
+        return try await removeWorktrees(items, removing: { try await worktrees.removeWorktree(at: $0) })
+    }
+
+    /// Shares one reservation between cleanup callers and sessions that are reopening.
+    func removeWorktrees(
+        _ items: [WorktreeInfo],
+        removing remove: @escaping @MainActor (URL) async throws -> Void
+    ) async throws -> [WorktreeInfo] {
         var kept: [WorktreeInfo] = []
         for item in items where item.isRemovable {
             let inUse = currents.contains {
@@ -74,13 +83,30 @@ extension Workspace {
                 kept.append(item)
                 continue
             }
-            try await worktrees.removeWorktree(at: item.url)
+            let path = Self.worktreePath(item.url)
+            if let removal = worktreeRemovals[path] {
+                try await removal.value
+                continue
+            }
+            let removal = Task { try await remove(item.url) }
+            worktreeRemovals[path] = removal
+            defer { worktreeRemovals[path] = nil }
+            try await removal.value
         }
         return kept
     }
 
+    func waitForWorktreeCleanup(at url: URL) async {
+        // A failed cleanup can leave the folder intact; let normal restoration/startup handle it.
+        try? await worktreeRemovals[Self.worktreePath(url)]?.value
+    }
+
+    private static func worktreePath(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
     private static func samePath(_ lhs: URL, _ rhs: URL) -> Bool {
-        lhs.standardizedFileURL.resolvingSymlinksInPath().path == rhs.standardizedFileURL.resolvingSymlinksInPath().path
+        worktreePath(lhs) == worktreePath(rhs)
     }
 
     private static func diskUsage(of url: URL) async -> Int64? {

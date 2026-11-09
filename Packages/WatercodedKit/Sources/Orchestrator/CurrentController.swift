@@ -73,6 +73,8 @@ public final class CurrentController: Identifiable {
     @ObservationIgnored var onSettle: ((CurrentID) -> Void)?
     /// MCP servers Watercoded adds to this Current's agent (its `delegate` tool).
     @ObservationIgnored var mcpServers: () -> [MCPServer] = { [] }
+    /// Waits for a reserved deletion before the session accesses its working folder.
+    @ObservationIgnored var waitForWorktreeCleanup: () async -> Void = {}
     /// Recreates the channel's worktree from its branch if it was removed while the Current was archived.
     @ObservationIgnored var restoreChannel: (@Sendable (Channel) async throws -> Void)?
     /// Prepares a new worktree before the agent first starts; cleared once it has run.
@@ -146,6 +148,9 @@ public final class CurrentController: Identifiable {
             $0.status = .flowing
             $0.interruptedByQuit = nil
         }
+        // Claim the session as active before yielding, so cleanup cannot start after this check.
+        // An already reserved deletion must finish before snapshots, restoration or agent startup.
+        await waitForWorktreeCleanup()
         if !isTurnActive {
             await recordTurnStart()
         }
@@ -397,13 +402,6 @@ public final class CurrentController: Identifiable {
         } catch {
             append(.notice(Notice(.error, error.localizedDescription)))
         }
-    }
-
-    func clearPendingInteractions() {
-        pendingPermissions.removeAll()
-        pendingPlan = nil
-        pendingQuestion = nil
-        pendingForm = nil
     }
 
     // MARK: Helpers

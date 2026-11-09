@@ -28,6 +28,8 @@ public final class Workspace {
     /// The app binary, which serves the `delegate` MCP server (`--delegate-mcp`); `nil` turns delegation off.
     @ObservationIgnored public var delegationExecutable: URL?
     @ObservationIgnored let delegationMailbox: DelegationMailbox
+    /// Deletions reserved before their first suspension; sessions wait before touching these folders.
+    @ObservationIgnored var worktreeRemovals: [URL: Task<Void, any Error>] = [:]
     @ObservationIgnored let worktrees: WorktreeManager
     /// Where ``startDemo()`` keeps its sample repository.
     @ObservationIgnored let demoRoot: URL
@@ -271,6 +273,9 @@ public final class Workspace {
         let git = git
         controller.snapshotter = { worktree, ref, message in
             try? await git.snapshotWorkingTree(in: worktree, ref: ref, message: message)
+        }
+        controller.waitForWorktreeCleanup = { [weak self] in
+            await self?.waitForWorktreeCleanup(at: current.channel.url)
         }
         controller.summarizer = summarizer
         let poolID = current.poolID
