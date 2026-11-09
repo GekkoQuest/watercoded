@@ -10,6 +10,8 @@ public struct DelegationRequest: Codable, Sendable, Hashable, Identifiable {
     public var model: String?
     public var effort: String?
     public var task: String
+    /// `false`: answer as soon as the helper has started, so the caller keeps working (`nil` means `true`).
+    public var wait: Bool?
 
     public init(
         id: String = UUID().uuidString,
@@ -17,7 +19,8 @@ public struct DelegationRequest: Codable, Sendable, Hashable, Identifiable {
         agent: String,
         model: String?,
         effort: String?,
-        task: String
+        task: String,
+        wait: Bool? = nil
     ) {
         self.id = id
         self.parentID = parentID
@@ -25,6 +28,7 @@ public struct DelegationRequest: Codable, Sendable, Hashable, Identifiable {
         self.model = model
         self.effort = effort
         self.task = task
+        self.wait = wait
     }
 }
 
@@ -69,6 +73,10 @@ public struct DelegationMailbox: Sendable {
         root.appending(path: "responses", directoryHint: .isDirectory)
     }
 
+    private var results: URL {
+        root.appending(path: "results", directoryHint: .isDirectory)
+    }
+
     /// Server side: asks the app to delegate.
     public func post(_ request: DelegationRequest) throws {
         try write(request, to: requests.appending(path: "\(request.id).json"))
@@ -99,6 +107,30 @@ public struct DelegationMailbox: Sendable {
               let response = try? JSONDecoder().decode(DelegationResponse.self, from: data) else { return nil }
         try? FileManager.default.removeItem(at: file)
         return response
+    }
+
+    /// App side: records a delegation's final answer, for `wait_for_delegations` and `check_delegations`.
+    public func recordResult(_ response: DelegationResponse) throws {
+        try write(response, to: results.appending(path: "\(response.id).json"))
+    }
+
+    /// Server side: a delegation's final answer, if it has finished (left in place, so it can be read again).
+    public func result(for id: String) -> DelegationResponse? {
+        guard let data = try? Data(contentsOf: results.appending(path: "\(id).json")) else { return nil }
+        return try? JSONDecoder().decode(DelegationResponse.self, from: data)
+    }
+
+    /// App side: forgets results older than `age`, so the folder doesn't grow forever.
+    public func removeResults(olderThan age: TimeInterval) {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: results, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, modified < Date.now.addingTimeInterval(-age) {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
     }
 
     private func write(_ value: some Encodable, to url: URL) throws {

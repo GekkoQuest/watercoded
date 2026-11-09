@@ -40,6 +40,9 @@ public struct Current: Identifiable, Hashable, Codable, Sendable {
     /// The Current that delegated work to this one (see `delegate`), if any. A child works in its parent's
     /// folder and is shown under it.
     public var parentID: CurrentID?
+    /// For a delegated Current: the snapshot of the parent's folder it started from, so its changes can be
+    /// applied back to the parent when it finishes.
+    public var delegationBase: String?
     /// For a branched Current: the checkpoint its first session forks from. Cleared once it has.
     public var pendingBranchAt: String?
     /// The pull request Land opened, watched for checks, reviews and merging.

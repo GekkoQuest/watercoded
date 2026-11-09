@@ -83,7 +83,7 @@ struct DelegationLiveTests {
         }
         let child = try #require(workspace.children(of: parent.id).first, "no delegated session was started")
         #expect(child.current.providerID.rawValue == route.child)
-        #expect(child.current.channel.path == parent.current.channel.path)
+        #expect(child.current.channel.path != parent.current.channel.path) // its own copy of the folder
         let reply = parent.transcript.compactMap {
             if case let .assistant(text) = $0.content {
                 text
@@ -93,6 +93,55 @@ struct DelegationLiveTests {
         }
         .last
         #expect(reply?.contains("PINEAPPLE") == true)
+        await workspace.shutdown()
+    }
+
+    @Test func `one agent runs two helpers in parallel and both sets of changes come back`() async throws {
+        let binary = try #require(Self.appBinary, "run `make build` first")
+        let fixture = try await Fixture.make()
+        defer { fixture.cleanUp() }
+        let workspace = Workspace(
+            registry: ProviderRegistry([ClaudeCodeProvider(), CodexProvider()]),
+            repository: InMemoryWorkspaceRepository(),
+            worktrees: WorktreeManager(root: fixture.repository.deletingLastPathComponent()
+                .appending(path: "live-worktrees")),
+            delegationMailbox: DelegationMailbox(
+                root: fixture.repository.deletingLastPathComponent().appending(path: "live-delegation")
+            )
+        )
+        workspace.backgroundSessionsEnabled = false
+        workspace.delegationExecutable = binary
+        await workspace.load()
+        let pool = try await workspace.addPool(at: fixture.repository)
+        let parent = try await workspace.startCurrent(NewCurrentRequest(
+            poolID: pool.id,
+            prompt: """
+            Using the watercoded tools: call delegate twice with wait set to false, at the same time. First, agent \
+            codex: "Create a file named codex.txt containing exactly the word CODEX." Second, agent claude-code, \
+            model haiku: "Create a file named claude.txt containing exactly the word CLAUDE." Then call \
+            wait_for_delegations with both ids. When both have finished, reply with exactly DONE.
+            """,
+            providerID: "claude-code",
+            model: "haiku",
+            permissionMode: .fullAccess,
+            isolation: .worktree
+        ))
+        do {
+            try await waitUntil(timeout: .seconds(420)) {
+                parent.current.lastTurnEndedAt != nil && !parent.isTurnActive
+            }
+        } catch {
+            await workspace.shutdown()
+            throw error
+        }
+        let children = workspace.children(of: parent.id)
+        #expect(Set(children.map(\.current.providerID.rawValue)) == ["codex", "claude-code"])
+        #expect(Set(children.map(\.current.channel.path)).count == 2)
+        let folder = parent.current.channel.url
+        #expect((try? String(contentsOf: folder.appending(path: "codex.txt"), encoding: .utf8))?
+            .contains("CODEX") == true)
+        #expect((try? String(contentsOf: folder.appending(path: "claude.txt"), encoding: .utf8))?
+            .contains("CLAUDE") == true)
         await workspace.shutdown()
     }
 }

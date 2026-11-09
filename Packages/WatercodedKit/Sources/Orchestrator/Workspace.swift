@@ -238,8 +238,9 @@ public final class Workspace {
         controller.discard()
         if let pool = pool(controller.current.poolID) {
             try? await git.deleteRefs(withPrefix: "refs/watercoded/\(id)/", in: pool.rootURL)
-            // A delegated session shares its parent's folder: never remove it from under the parent.
-            if removingWorktree, controller.current.parentID == nil {
+            // Never remove a folder from under a parent (helpers made before v0.6 shared their parent's folder).
+            let parentFolder = controller.current.parentID.flatMap { self.controller($0) }?.current.channel.path
+            if removingWorktree, controller.current.channel.path != parentFolder {
                 try await worktrees.removeChannel(controller.current.channel, from: pool, force: true)
             }
         }

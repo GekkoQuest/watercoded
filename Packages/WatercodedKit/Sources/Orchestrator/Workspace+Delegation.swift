@@ -65,26 +65,46 @@ extension Workspace {
     }
 
     func handle(_ request: DelegationRequest) async {
-        let outcome: DelegationOutcome
+        delegationMailbox.removeResults(olderThan: 24 * 60 * 60)
+        let child: CurrentController
         do {
-            let child = try await startDelegation(request)
-            outcome = await withCheckedContinuation { continuation in
-                delegationWaiters[child.id] = continuation
-                Task { await child.send(request.task) }
-            }
+            child = try await startDelegation(request)
         } catch {
-            outcome = .failed(error.localizedDescription)
+            let failure = DelegationResponse(id: request.id, error: error.localizedDescription)
+            try? delegationMailbox.recordResult(failure)
+            try? delegationMailbox.respond(failure)
+            return
+        }
+        let waits = request.wait ?? true
+        if !waits {
+            // The caller keeps working; it collects the answer later with wait_for_delegations.
+            let who = [child.providerDescriptor?.displayName, child.current.model].compactMap(\.self)
+                .joined(separator: " · ")
+            try? delegationMailbox.respond(DelegationResponse(id: request.id, text: """
+            Started \(who) on this as delegation \(request.id), in its own copy of your folder. Keep working; call \
+            wait_for_delegations with ["\(request.id)"] to get its answer (its changes are applied to your folder then).
+            """))
+        }
+        let outcome = await withCheckedContinuation { continuation in
+            delegationWaiters[child.id] = continuation
+            Task { await child.send(request.task) }
         }
         let response = switch outcome {
         case let .answered(text): DelegationResponse(id: request.id, text: text)
         case let .failed(message): DelegationResponse(id: request.id, error: message)
         }
-        try? delegationMailbox.respond(response)
+        try? delegationMailbox.recordResult(response)
+        if waits {
+            try? delegationMailbox.respond(response)
+        }
     }
 
-    /// Creates the child Current: the chosen agent and model, in the parent's folder and permission mode.
+    /// Creates the child Current: the chosen agent and model, in its own worktree started from a snapshot of the
+    /// parent's folder (uncommitted changes included), in the parent's permission mode. Helpers working at the same
+    /// time as their parent, or each other, never edit the same files underneath one another.
     func startDelegation(_ request: DelegationRequest) async throws -> CurrentController {
-        guard let uuid = UUID(uuidString: request.parentID), let parent = controller(CurrentID(uuid)) else {
+        guard let uuid = UUID(uuidString: request.parentID), let parent = controller(CurrentID(uuid)),
+              let pool = pool(parent.current.poolID) else {
             throw DelegationError.parentGone
         }
         let providerID = Self.providerID(for: request.agent)
@@ -93,33 +113,79 @@ extension Workspace {
               !provider.descriptor.isDemo || parent.providerDescriptor?.isDemo == true else {
             throw DelegationError.unknownAgent(
                 request.agent,
-                available: registry.descriptors.filter { !$0.isDemo }
-                    .map(\.id.rawValue)
+                available: registry.descriptors.filter { !$0.isDemo }.map(\.id.rawValue)
             )
         }
         guard case .available = await provider.availability() else {
             throw DelegationError.unavailable(provider.descriptor.displayName)
         }
+        let title = NewCurrentRequest.title(fromPrompt: request.task)
+        let base = try await git.snapshotWorkingTree(
+            in: parent.current.channel.url,
+            ref: "refs/watercoded/delegations/\(request.id)/base",
+            message: "Delegation base"
+        )
+        let channel = try await worktrees.makeWorktreeChannel(for: pool, title: title, base: base)
         var child = Current(
             poolID: parent.current.poolID,
-            title: NewCurrentRequest.title(fromPrompt: request.task),
+            title: title,
             providerID: providerID,
             model: request.model.flatMap { $0.isEmpty ? nil : $0 },
             permissionMode: parent.current.permissionMode,
-            channel: parent.current.channel // same folder: the parent sees the child's changes
+            channel: channel
         )
         child.parentID = parent.id
+        child.delegationBase = base
         child.effort = request.effort.flatMap { $0.isEmpty ? nil : $0 }
         child.titleSource = .prompt
         try await repository.saveCurrent(child)
-        return adopt(child, transcript: [])
+        let controller = adopt(child, transcript: [])
+        if let setup = pool.worktreeSetup, !setup.isEmpty {
+            let preparer = WorktreePreparer(environment: .shared)
+            let folder = channel.url
+            let root = pool.rootURL
+            controller.pendingSetup = { await preparer.prepare(folder, from: root, with: setup) }
+        }
+        return controller
     }
 
-    /// A delegated Current's turn ended: answer its parent's tool call.
+    /// A delegated Current's turn ended: bring its changes into the parent's folder, then answer the parent.
     func delegatedTurnEnded(_ controller: CurrentController, _ event: AttentionEvent) {
         guard case let .turnFinished(outcome) = event,
               let waiter = delegationWaiters.removeValue(forKey: controller.id) else { return }
-        waiter.resume(returning: Self.result(of: controller, outcome))
+        Task {
+            let merge = outcome == .completed ? await applyDelegatedChanges(of: controller) : nil
+            waiter.resume(returning: Self.result(of: controller, outcome, merge: merge))
+        }
+    }
+
+    /// Applies what the child changed (since the snapshot it started from) to its parent's folder.
+    /// Returns a note for the parent's agent.
+    func applyDelegatedChanges(of child: CurrentController) async -> String? {
+        guard let base = child.current.delegationBase, let parentID = child.current.parentID,
+              let parent = controller(parentID) else { return nil }
+        do {
+            let result = try await git.snapshotWorkingTree(
+                in: child.current.channel.url,
+                ref: "refs/watercoded/delegations/\(child.id)/result",
+                message: "Delegation result"
+            )
+            switch try await git.applyChanges(from: base, to: result, into: parent.current.channel.url) {
+            case let .applied(files):
+                parent.activity.fileChangeRevision += 1
+                return "Its changes were applied to your folder: \(files.joined(separator: ", "))."
+            case .nothingToApply:
+                return "It didn't change any files."
+            case .conflict:
+                return """
+                Its changes couldn't be applied to your folder because the same lines changed there meanwhile, so \
+                nothing was touched. To merge them yourself: `git diff \(base) \(result) | git apply --3way`
+                """
+            }
+        } catch {
+            return "Its changes couldn't be brought back automatically (\(error.localizedDescription)); "
+                + "they're in \(child.current.channel.path)."
+        }
     }
 
     /// Answers a parent still waiting on a child that's going away (deleted or archived).
@@ -128,7 +194,11 @@ extension Workspace {
             .resume(returning: .failed("The delegated session was stopped in Watercoded before it finished."))
     }
 
-    static func result(of controller: CurrentController, _ outcome: TurnOutcome) -> DelegationOutcome {
+    static func result(
+        of controller: CurrentController,
+        _ outcome: TurnOutcome,
+        merge: String? = nil
+    ) -> DelegationOutcome {
         switch outcome {
         case let .failed(message):
             return .failed("The delegated agent failed: \(message)")
@@ -143,10 +213,11 @@ extension Workspace {
                 }
             }
             guard case let .assistant(text)? = reply?.content
-            else { return .answered("(The agent finished without a reply.)") }
+            else { return .answered("(The agent finished without a reply.)" + (merge.map { " \($0)" } ?? "")) }
             let who = [controller.providerDescriptor?.displayName, controller.current.environment?.model]
                 .compactMap(\.self).joined(separator: " · ")
-            return .answered("\(text)\n\n(From \(who), in Watercoded session “\(controller.current.title)”.)")
+            let note = merge.map { "\n\n\($0)" } ?? ""
+            return .answered("\(text)\(note)\n\n(From \(who), in Watercoded session “\(controller.current.title)”.)")
         }
     }
 

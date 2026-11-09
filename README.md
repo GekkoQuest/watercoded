@@ -23,7 +23,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.5). There's no prebuilt download yet: you build it from source, which takes a few minutes
+> **Status:** early (v0.6). There's no prebuilt download yet: you build it from source, which takes a few minutes
 > once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
@@ -42,9 +42,10 @@ Reduce Motion is respected: the water stays still and only the level changes. He
   ("Default (Opus 5.5)"), and Auto effort shows the model's default ("Auto (Medium)"). Any custom model name works too.
 - **A real composer:** paste or drop screenshots, `@` to mention files, `/` for the agent's commands.
 - **Agents delegate to agents:** ask one agent to hand part of the work to another, in any direction (Claude Code →
-  Codex, Codex → Claude Code, or another model of the same agent): "have GPT-6.1-Sol write the migration". The helper
-  runs as its own session under the first, in the same folder, with its approvals shown as usual, and its answer
-  goes back to the agent that asked.
+  Codex, Codex → Claude Code, or another model of the same agent): "have GPT-6.1-Sol write the migration". Helpers
+  run as their own sessions under the first, each in its own copy of the folder, so several can work at once while
+  the first keeps going. Their approvals show as usual; when one finishes, its changes are applied back (never over
+  edits made meanwhile) and its answer goes to the agent that asked.
 - **Branch any turn:** right-click a message to branch from it, or edit and resend it, in a new worktree with the
   files and conversation from that point. The original session is untouched.
 - **Agents outlive the app:** quitting doesn't stop them; Watercoded reconnects on launch, including approvals
