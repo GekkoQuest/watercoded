@@ -12,10 +12,17 @@ public struct CodexProvider: AgentProvider {
 
     private let executableName: String
     private let environment: ShellEnvironment
+    /// Where Codex saves sessions (`~/.codex/sessions`), for importing them.
+    let sessionsDirectory: URL
 
-    public init(executableName: String = "codex", environment: ShellEnvironment = .shared) {
+    public init(
+        executableName: String = "codex",
+        environment: ShellEnvironment = .shared,
+        sessionsDirectory: URL = CodexProvider.homeDirectory.appending(path: "sessions", directoryHint: .isDirectory)
+    ) {
         self.executableName = executableName
         self.environment = environment
+        self.sessionsDirectory = sessionsDirectory
     }
 
     public var descriptor: ProviderDescriptor {
@@ -108,7 +115,7 @@ public struct CodexProvider: AgentProvider {
 
     // MARK: Config
 
-    static var homeDirectory: URL {
+    public static var homeDirectory: URL {
         ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(filePath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
     }
