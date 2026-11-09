@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Agents run user-installed CLIs against arbitrary repositories, so the app is not sandboxed.
+       See docs/adr/0001-native-macos-app.md. Hardened Runtime is enabled for distribution. -->
+  <key>com.apple.security.app-sandbox</key>
+  <false/>
+</dict>
+</plist>

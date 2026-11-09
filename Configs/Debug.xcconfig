@@ -1,0 +1,8 @@
+#include "Base.xcconfig"
+
+// Local builds are ad-hoc signed ("Sign to Run Locally"); no Apple Developer account needed.
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+ONLY_ACTIVE_ARCH = YES

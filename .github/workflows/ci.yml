@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then sudo xcode-select -s /Applications/Xcode_26.app; fi
+          xcodebuild -version
+          xcodebuild -version | head -1 | grep -Eq '^Xcode (2[6-9]|[3-9][0-9])' \
+            || { echo "::error::Xcode 26 or later is required"; exit 1; }
+      - run: brew bundle --file=Brewfile
+      - run: make lint
+
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then sudo xcode-select -s /Applications/Xcode_26.app; fi
+          xcodebuild -version
+          xcodebuild -version | head -1 | grep -Eq '^Xcode (2[6-9]|[3-9][0-9])' \
+            || { echo "::error::Xcode 26 or later is required"; exit 1; }
+      - name: Metal Toolchain
+        run: xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+      - run: make test
+
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then sudo xcode-select -s /Applications/Xcode_26.app; fi
+          xcodebuild -version
+          xcodebuild -version | head -1 | grep -Eq '^Xcode (2[6-9]|[3-9][0-9])' \
+            || { echo "::error::Xcode 26 or later is required"; exit 1; }
+      - run: brew bundle --file=Brewfile
+      - name: Metal Toolchain
+        run: xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+      - run: make build CONFIG=Release

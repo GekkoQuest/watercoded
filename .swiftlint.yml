@@ -1,0 +1,49 @@
+# SwiftLint — style is owned by SwiftFormat; SwiftLint guards correctness and API hygiene.
+included:
+  - App/Sources
+  - Packages/WatercodedKit/Sources
+  - Packages/WatercodedKit/Tests
+excluded:
+  - Packages/WatercodedKit/.build
+
+disabled_rules:
+  - trailing_comma        # SwiftFormat decides
+  - opening_brace         # SwiftFormat decides
+  - todo                  # TODOs are allowed but must reference an issue (see CONTRIBUTING)
+  - optional_data_string_conversion  # process output is decoded leniently on purpose (String(decoding:as:))
+
+opt_in_rules:
+  - closure_spacing
+  - contains_over_first_not_nil
+  - empty_count
+  - explicit_init
+  - fatal_error_message
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - last_where
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - toggle_bool
+  - unowned_variable_capture
+  - weak_delegate
+
+line_length:
+  warning: 120
+  error: 160
+  ignores_comments: true
+  ignores_urls: true
+type_body_length: { warning: 350, error: 500 }
+file_length: { warning: 500, error: 800 }
+function_body_length: { warning: 60, error: 100 }
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+  ignores_case_statements: true  # a flat switch over an enum is one decision, not many
+identifier_name:
+  min_length: 1
+  excluded: [id, x, y, i, j, k, dt, dx, ax, ay]
+nesting:
+  type_level: 2
+type_name:
+  excluded: [ID]

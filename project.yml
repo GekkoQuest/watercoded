@@ -1,0 +1,65 @@
+# XcodeGen spec. `make generate` turns this into Watercoded.xcodeproj (which is not committed).
+name: Watercoded
+options:
+  bundleIdPrefix: dev.watercoded
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  developmentLanguage: en
+
+configFiles:
+  Debug: Configs/Debug.xcconfig
+  Release: Configs/Release.xcconfig
+
+packages:
+  WatercodedKit:
+    path: Packages/WatercodedKit
+
+targets:
+  Watercoded:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+      - path: App/Watercoded.entitlements
+        buildPhase: none
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Watercoded
+        CFBundleName: Watercoded
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHighResolutionCapable: true
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+    dependencies:
+      - package: WatercodedKit
+        product: WatercodedUI
+      - package: WatercodedKit
+        product: Orchestrator
+      - package: WatercodedKit
+        product: AgentKit
+      - package: WatercodedKit
+        product: Meniscus
+      - package: WatercodedKit
+        product: ClaudeCodeProvider
+      - package: WatercodedKit
+        product: ReplayProvider
+      - package: WatercodedKit
+        product: OnDeviceIntelligence
+      - package: WatercodedKit
+        product: ProcessKit
+
+schemes:
+  Watercoded:
+    build:
+      targets:
+        Watercoded: all
+    run:
+      config: Debug
+    archive:
+      config: Release

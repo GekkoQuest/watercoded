@@ -1,0 +1,22 @@
+# SwiftFormat — https://github.com/nicklockwood/SwiftFormat
+--swiftversion 6.2
+--exclude .build,build,**/.build
+
+--indent 4
+--maxwidth 120
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--closingparen balanced
+--commas inline
+--semicolons never
+--self remove
+--importgrouping testable-bottom
+--stripunusedargs closure-only
+--header strip
+--ifdef no-indent
+--extensionacl on-declarations
+--redundanttype inferred
+
+--enable isEmpty,sortDeclarations,wrapEnumCases
+--disable redundantReturn,wrapMultilineStatementBraces

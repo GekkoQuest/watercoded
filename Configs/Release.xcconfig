@@ -1,0 +1,8 @@
+#include "Base.xcconfig"
+
+// Ad-hoc signed. Distribution signing (Developer ID + notarization) isn't set up yet; see CONTRIBUTING.md.
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_COMPILATION_MODE = wholemodule
+DEAD_CODE_STRIPPING = YES
