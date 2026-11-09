@@ -16,6 +16,7 @@ struct ComposerView: View {
     @FocusState private var isFocused: Bool
     @State private var files: [String] = []
     @State private var isDropTargeted = false
+    @State private var isSubmitting = false
 
     /// The field and its buttons are concentric: every button sits `inset` from the field's edge,
     /// and the field's corner radius is the buttons' radius plus `inset`.
@@ -119,29 +120,41 @@ struct ComposerView: View {
         let hasContent = !controller.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !controller.draftImages.isEmpty
         let canQueue = !controller.isTurnActive || controller.capabilities.contains(.queueing)
-        return hasContent && canQueue && controller.current.status != .settled
+            || controller.isLocalPromptCommand(controller.draft)
+        return hasContent && canQueue && !isSubmitting && controller.current.status != .settled
     }
 
     private var placeholder: String {
         if controller.current.status == .settled {
             return "This session is archived. Reopen it to continue."
         }
-        return controller.isTurnActive ? "Queue a follow-up…" : "Reply to the agent… (@ for files, / for commands)"
+        return controller.isTurnActive
+            ? "Agent working… (/ for commands)"
+            : "Reply to the agent… (@ for files, / for commands)"
     }
 
     private func send() {
         guard canSend else { return }
         let text = controller.draft
         let images = controller.draftImages
-        controller.draft = ""
-        controller.draftImages = []
-        Task { await controller.send(text, images: images) }
+        isSubmitting = true
+        Task {
+            defer { isSubmitting = false }
+            if await controller.submitPrompt(text, images: images) {
+                if controller.draft == text {
+                    controller.draft = ""
+                }
+                if controller.draftImages == images {
+                    controller.draftImages = []
+                }
+            }
+        }
     }
 
     // MARK: Completions
 
     private var suggestions: [Suggestion] {
-        Suggestion.make(for: controller.draft, files: files, commands: controller.availableCommands)
+        Suggestion.make(for: controller.draft, files: files, commands: controller.promptCommands)
     }
 
     private func accept(_ suggestion: Suggestion) {
@@ -176,7 +189,7 @@ struct ComposerView: View {
 struct Suggestion: Identifiable, Hashable {
     enum Kind: Hashable {
         case file
-        case command(summary: String)
+        case command(summary: String, argumentHint: String?)
     }
 
     let kind: Kind
@@ -186,11 +199,10 @@ struct Suggestion: Identifiable, Hashable {
     }
 
     static func make(for draft: String, files: [String], commands: [SlashCommand]) -> [Suggestion] {
-        if draft.hasPrefix("/"), !draft.contains(" ") {
+        if draft.hasPrefix("/"), !draft.contains(where: \.isWhitespace) {
             let typed = draft.dropFirst().lowercased()
             return commands.filter { typed.isEmpty || $0.name.lowercased().hasPrefix(typed) }
-                .prefix(8)
-                .map { Suggestion(kind: .command(summary: $0.summary), value: $0.name) }
+                .map { Suggestion(kind: .command(summary: $0.summary, argumentHint: $0.argumentHint), value: $0.name) }
         }
         guard let token = draft.split(separator: " ", omittingEmptySubsequences: false).last,
               token.hasPrefix("@"), !draft.hasSuffix(" ") else { return [] }
@@ -221,6 +233,16 @@ private struct SuggestionList: View {
     let accept: (Suggestion) -> Void
 
     var body: some View {
+        ScrollView {
+            rows
+        }
+        .frame(height: CGFloat(min(suggestions.count, Metrics.suggestionVisibleRows)) * Metrics.suggestionRowHeight)
+        .font(.callout)
+        .padding(.vertical, Spacing.xSmall)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+    }
+
+    private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 Button {
@@ -231,8 +253,11 @@ private struct SuggestionList: View {
                         case .file:
                             Image(systemName: "doc").foregroundStyle(.secondary)
                             Text(suggestion.value).lineLimit(1).truncationMode(.head)
-                        case let .command(summary):
+                        case let .command(summary, argumentHint):
                             Text("/\(suggestion.value)").fontWeight(.medium)
+                            if let argumentHint {
+                                Text(argumentHint).foregroundStyle(.tertiary).lineLimit(1)
+                            }
                             Text(summary).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
@@ -241,15 +266,12 @@ private struct SuggestionList: View {
                         }
                     }
                     .padding(.horizontal, Spacing.medium)
-                    .padding(.vertical, Spacing.xSmall + 1)
+                    .frame(height: Metrics.suggestionRowHeight)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .font(.callout)
-        .padding(.vertical, Spacing.xSmall)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
     }
 }
 

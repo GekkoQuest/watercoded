@@ -34,6 +34,24 @@ struct CurrentScreen: View {
             }
             TranscriptView(controller: controller)
             VStack(spacing: Spacing.small) {
+                if controller.current.status != .settled, let question = controller.pendingQuestions.first {
+                    Button {
+                        window.highlightedItem = controller.transcript.first(where: {
+                            if case let .question(record) = $0.content {
+                                return record.requestID == question.requestID
+                            }
+                            return false
+                        })?.id
+                    } label: {
+                        Label(
+                            "Answer: \(question.questions.first?.text ?? "The agent has a question")",
+                            systemImage: "questionmark.bubble"
+                        )
+                        .lineLimit(1)
+                    }
+                    .buttonStyle(.glass)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ApprovalTray(controller: controller)
                 TurnStatsBar(controller: controller)
                 ComposerView(controller: controller)

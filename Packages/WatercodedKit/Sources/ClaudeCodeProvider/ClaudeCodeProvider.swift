@@ -78,7 +78,7 @@ public struct ClaudeCodeProvider: AgentProvider {
             tintHue: 0.07,
             capabilities: ProviderCapabilities([
                 .streamingText, .toolApprovals, .interrupt, .resume, .planMode, .costReporting, .queueing,
-                .liveSettings, .questions, .customModels, .branching
+                .liveSettings, .questions, .customModels, .branching, .compaction, .goals
             ]).union(relay == nil ? [] : .backgroundSessions), // keeps running after quit, under a relay
             models: [
                 AgentModel(id: "default", displayName: "Default", isDefault: true),

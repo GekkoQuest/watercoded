@@ -14,6 +14,7 @@ struct ClaudeWireTranslator {
     private var usage = UsageSnapshot()
     private var tasks = ClaudeTaskTracker()
     private var thinkingEstimate: Int?
+    private var hasAssistantText = false
 
     /// The main conversation's assistant lines carry the `uuid` that `--resume-session-at` accepts.
     private static func checkpoint(_ line: JSONValue) -> [AgentEvent] {
@@ -154,6 +155,7 @@ struct ClaudeWireTranslator {
         // A subagent's own prose and token counts belong to the subagent, not the main conversation.
         guard parentCallID == nil else { return events }
         if !text.isEmpty {
+            hasAssistantText = true
             events.insert(.messageCompleted(messageID: messageID, text: text), at: 0)
         }
         if let tokens = Self.contextTokens(from: message["usage"]) {
@@ -233,7 +235,13 @@ struct ClaudeWireTranslator {
         } else {
             outcome = .completed
         }
-        return [.usageUpdated(usage), .turnFinished(outcome)]
+        // Local commands (goal status, an empty-history compact, etc.) can reply only in `result`.
+        // Ordinary model turns already emitted their assistant text; don't duplicate it.
+        let resultText = message["result"]?.string ?? ""
+        let notices: [AgentEvent] = !hasAssistantText && !resultText.isEmpty && outcome == .completed
+            ? [.notice(Notice(.info, resultText))] : []
+        hasAssistantText = false
+        return notices + [.usageUpdated(usage), .turnFinished(outcome)]
     }
 
     private func translateRateLimit(_ info: JSONValue?) -> [AgentEvent] {

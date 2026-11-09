@@ -165,6 +165,24 @@ actor CodexSession: AgentSession {
         [["type": "text", "text": .string(text), "text_elements": []]]
     }
 
+    func runCommand(_ command: SessionCommand) async throws -> String? {
+        guard !ended, let threadID = translator.threadID else { throw AgentError.sessionClosed }
+        let rpc = CodexRequests.command(command, threadID: threadID)
+        let result = try await request(rpc.method, rpc.params)
+        switch command {
+        case .compact:
+            return nil // Progress arrives as turn notifications and a contextCompaction item.
+        case .goal(.status):
+            return CodexRequests.goalSummary(result)
+        case let .goal(.set(objective)):
+            // Setting persisted goal state does not submit input. Start its first turn explicitly.
+            try await send(UserMessage(text: objective))
+            return CodexRequests.goalSummary(result)
+        case .goal(.clear):
+            return "Goal cleared."
+        }
+    }
+
     func interrupt() async throws {
         guard !ended, let threadID = translator.threadID, let turnID = translator.currentTurnID,
               translator.isTurnActive else { return }
@@ -237,7 +255,7 @@ actor CodexSession: AgentSession {
                     case let .permissionRequested(request):
                         pending[request.id] = event
                         order.append(request.id)
-                    case let .planProposed(id, _), let .questionAsked(id, _):
+                    case let .planProposed(id, _), let .questionAsked(id, _), let .asyncQuestionAsked(id, _):
                         pending[id] = event
                         order.append(id)
                     case let .formRequested(form):

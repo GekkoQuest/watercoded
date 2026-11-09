@@ -14,6 +14,7 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
 | Plans | `can_use_tool` for `ExitPlanMode` with `input.plan` (Markdown); allow = build, deny with feedback = keep planning |
 | Live settings | `control_request` `set_permission_mode {mode}` and `set_model {model}` |
 | Compaction | `system` / `compact_boundary` with `compact_metadata.pre_tokens/post_tokens` |
+| Manual commands | `/compact`, `/goal`, `/goal <objective>`, `/goal clear` sent as ordinary stream-json user messages |
 | Task list | `TaskCreate` / `TaskUpdate` (or `TodoWrite`), only exposed with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` |
 | Billing | `system/init.apiKeySource == "none"` means a subscription; `rate_limit_event.unifiedWindows` gives plan usage |
 | Images | user message content blocks `{type: image, source: {type: base64, media_type, data}}` before the text |
@@ -25,6 +26,10 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
 - Launch `claude` with `--permission-prompt-tool stdio` and `--allow-dangerously-skip-permissions`. The second flag only
   makes Full Access *selectable* later. The active mode still governs, and the UI confirms before switching to it.
 - Set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` so the task list is available.
+- Keep `AskUserQuestion` on its blocking permission-response path. The stdio round-trip regression test in
+  `ClaudeQuestionTests` exercises the real `ClaudeCodeSession` against a deterministic protocol peer: a batch of
+  single-choice, multi-select and custom answers returns in `updatedInput.answers`, preserving the original
+  question input and `multiSelect` flags. This test does not run inference or replace the opt-in live test.
 - Ignore unknown message types and fields (`JSONValue` decoding), so new CLI versions degrade gracefully.
 
 ## Consequences
@@ -35,3 +40,10 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
   main-conversation `assistant` line of that turn (verified with 2.1.319: the fork holds only the history up to it,
   and the original session is untouched). The flag only applies in `--print` mode, which Watercoded always uses.
 - These are undocumented internals and may change. Unit tests use recorded fixtures. `WATERCODED_LIVE_CLAUDE=1 swift test --package-path Packages/WatercodedKit --filter ClaudeCodeLiveTests` re-verifies them against the installed CLI and should be run when upgrading it.
+- The shared composer commands dispatch native `/compact` and `/goal` messages. Claude owns compaction, goal
+  evaluation and continuation. Goal availability still follows Claude's workspace trust and hook settings;
+  provider refusals must be shown. A command can return text only in its `result` message, so the translator
+  exposes successful result text when no assistant text was emitted for the turn, without duplicating normal replies.
+  These command forms are documented in [SDK commands](https://code.claude.com/docs/en/agent-sdk/slash-commands)
+  and [Goals](https://code.claude.com/docs/en/goal). Unit tests cover dispatch text and result translation;
+  command execution has not been re-verified with live inference on 2.1.319.

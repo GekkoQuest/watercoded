@@ -44,6 +44,9 @@ public enum AgentEvent: Sendable, Hashable {
     case environmentReported(AgentEnvironment)
     /// The agent asked multiple-choice questions. Answer with ``AgentSession/answer(_:with:)``.
     case questionAsked(requestID: String, questions: [QuestionRecord.Question])
+    /// A question delivered as a message while the agent continues working. Answer as ordinary
+    /// conversation input, not as a response to a suspended provider RPC.
+    case asyncQuestionAsked(requestID: String, questions: [QuestionRecord.Question])
     /// An MCP server asks the user for input (a short form, or a link to open). Answer with
     /// ``AgentSession/respondToForm(_:with:)``.
     case formRequested(FormRecord)

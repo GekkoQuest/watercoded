@@ -124,7 +124,8 @@ struct CodexWireTranslator {
         switch method {
         case "turn/started":
             currentTurnID = params["turn"]?["id"]?.string ?? currentTurnID
-            return []
+            // Compaction and native goal continuations can start without a host turn/start request.
+            return isTurnActive ? [] : turnRequested()
         case "item/agentMessage/delta":
             guard let itemID = params["itemId"]?.string, let delta = params["delta"]?.string else { return [] }
             return [.textDelta(messageID: itemID, text: delta)]
@@ -203,6 +204,10 @@ struct CodexWireTranslator {
         let failed = status == "failed" || status == "declined"
         switch item["type"]?.string {
         case "agentMessage":
+            let questions = Self.asyncQuestions(item)
+            if !questions.isEmpty {
+                return [.asyncQuestionAsked(requestID: "codex-async-\(id)", questions: questions)]
+            }
             return [.messageCompleted(messageID: id, text: item["text"]?.string ?? "")]
         case "plan":
             proposedPlan = item["text"]?.string

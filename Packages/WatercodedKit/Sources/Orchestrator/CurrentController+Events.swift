@@ -53,8 +53,8 @@ extension CurrentController {
             update { $0.environment = environment }
         case let .planProposed(requestID, markdown):
             handlePlan(requestID: requestID, markdown: markdown)
-        case let .questionAsked(requestID, questions):
-            handleQuestion(requestID: requestID, questions: questions)
+        case .questionAsked, .asyncQuestionAsked:
+            handleQuestionEvent(event)
         case let .formRequested(form):
             handleForm(form)
         case let .tasksUpdated(items):
@@ -148,15 +148,6 @@ extension CurrentController {
         append(.plan(plan))
         update { $0.status = .waiting }
         onAttention?(self, .planReady)
-    }
-
-    private func handleQuestion(requestID: String, questions: [QuestionRecord.Question]) {
-        flushStreamingText()
-        let record = QuestionRecord(requestID: requestID, questions: questions)
-        pendingQuestion = record
-        append(.question(record))
-        update { $0.status = .waiting }
-        onAttention?(self, .questionAsked(questions.first?.text ?? "The agent has a question."))
     }
 
     private func handleCompaction(pre: Int?, post: Int?) {

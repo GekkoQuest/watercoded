@@ -40,6 +40,8 @@ public final class CurrentController: Identifiable {
     public internal(set) var pendingPermissions: [PermissionRequest] = []
     public internal(set) var pendingPlan: PlanRecord?
     public internal(set) var pendingQuestion: QuestionRecord?
+    /// Questions the user can answer while the agent keeps working, or after its turn ends.
+    public internal(set) var pendingAsyncQuestions: [QuestionRecord] = []
     /// An MCP server's form waiting for the user.
     public internal(set) var pendingForm: FormRecord?
     public internal(set) var isTurnActive = false
@@ -106,6 +108,11 @@ public final class CurrentController: Identifiable {
         self.transcript = transcript
         self.provider = provider
         self.repository = repository
+        pendingAsyncQuestions = transcript.compactMap { item in
+            guard case let .question(record) = item.content, record.isAsynchronous,
+                  !record.isAnswered else { return nil }
+            return record
+        }
         for (index, item) in transcript.enumerated() {
             if case let .toolCall(record) = item.content {
                 toolItemIndex[record.callID] = index
@@ -126,6 +133,11 @@ public final class CurrentController: Identifiable {
         !pendingPermissions.isEmpty || pendingPlan != nil || pendingQuestion != nil || pendingForm != nil
     }
 
+    /// All actionable question cards, including questions that do not block the agent.
+    public var pendingQuestions: [QuestionRecord] {
+        [pendingQuestion].compactMap(\.self) + pendingAsyncQuestions
+    }
+
     /// Whether the provider's prompt cache has probably expired, making the next turn slower and
     /// costlier because the whole context is read again.
     public func isPromptCacheCold(at now: Date = .now) -> Bool {
@@ -137,8 +149,14 @@ public final class CurrentController: Identifiable {
 
     /// Sends a message (with optional images), starting or resuming the agent session if needed.
     public func send(_ text: String, images: [ImageAttachment] = []) async {
+        _ = await sendMessage(text, images: images)
+    }
+
+    /// Whether input reached the provider, so failed async answers can keep their question card.
+    func sendMessage(_ text: String, images: [ImageAttachment] = []) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !images.isEmpty else { return }
+        guard !trimmed.isEmpty || !images.isEmpty else { return false }
+        defer { scheduleSave() }
         if !images.isEmpty {
             append(.userImages(count: images.count))
         }
@@ -157,10 +175,11 @@ public final class CurrentController: Identifiable {
         do {
             let session = try await ensureSession()
             try await session.send(UserMessage(text: message, images: images))
+            return true
         } catch {
             fail(error.localizedDescription)
+            return false
         }
-        scheduleSave()
     }
 
     public func decide(_ requestID: PermissionRequest.ID, _ decision: PermissionDecision) async {
@@ -202,25 +221,6 @@ public final class CurrentController: Identifiable {
         let reason = trimmed.isEmpty ? "Keep planning." : "Keep planning. Feedback: \(trimmed)"
         await resolve(plan.requestID, allowed: false) {
             try await $0.respond(to: plan.requestID, with: .deny(reason: reason))
-        }
-    }
-
-    /// Answers the pending question (question text → chosen label or labels).
-    public func answer(_ answers: [String: String]) async {
-        guard let question = pendingQuestion else { return }
-        pendingQuestion = nil
-        if let index = transcript.lastIndex(where: {
-            if case let .question(record) = $0.content {
-                record.requestID == question.requestID
-            } else {
-                false
-            }
-        }), case var .question(record) = transcript[index].content {
-            record.answers = answers
-            transcript[index].content = .question(record)
-        }
-        await resolve(question.requestID, allowed: true) {
-            try await $0.answer(question.requestID, with: answers)
         }
     }
 
@@ -326,7 +326,7 @@ public final class CurrentController: Identifiable {
         try? await repository.saveTranscript(transcript, for: id)
     }
 
-    private func ensureSession() async throws -> any AgentSession {
+    func ensureSession() async throws -> any AgentSession {
         if let session {
             return session
         }

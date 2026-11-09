@@ -86,6 +86,11 @@ actor ClaudeCodeSession: AgentSession {
         try write(ClaudeControlMessages.userMessage(message.text, images: message.images))
     }
 
+    func runCommand(_ command: SessionCommand) async throws -> String? {
+        try await send(UserMessage(text: command.slashText))
+        return nil
+    }
+
     func respond(to requestID: PermissionRequest.ID, with decision: PermissionDecision) async throws {
         guard !ended else { throw AgentError.sessionClosed }
         let input = translator.consumePermissionInput(for: requestID)

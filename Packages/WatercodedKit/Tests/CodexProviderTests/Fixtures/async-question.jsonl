@@ -1,0 +1,3 @@
+{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"agentMessage","id":"async-question","text":"Which part should we work on next?\n- Question boxes\n- Slash commands","phase":"final_answer","delivery":"async","questions":[{"title":"Which part should we work on next?","options":["Question boxes","Slash commands"]}]}}}
+{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"agentMessage","id":"follow-up","text":"Here is the question.","phase":"final_answer","questions":null}}}
+{"method":"thread/status/changed","params":{"threadId":"thread","status":{"type":"idle"}}}

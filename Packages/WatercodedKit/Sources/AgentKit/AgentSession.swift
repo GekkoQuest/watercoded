@@ -12,6 +12,10 @@ public protocol AgentSession: AnyObject, Sendable {
     /// Sends a user message. Providers with ``ProviderCapabilities/queueing`` accept this mid-turn.
     func send(_ message: UserMessage) async throws
 
+    /// Runs a native provider operation. Any immediate status text is returned to the host;
+    /// longer operations publish progress on `events`. Requires `.compaction` or `.goals`.
+    func runCommand(_ command: SessionCommand) async throws -> String?
+
     /// Answers a ``PermissionRequest`` previously published on ``events``.
     func respond(to requestID: PermissionRequest.ID, with decision: PermissionDecision) async throws
 
@@ -48,6 +52,10 @@ public protocol AgentSession: AnyObject, Sendable {
 }
 
 extension AgentSession {
+    public func runCommand(_ command: SessionCommand) async throws -> String? {
+        throw AgentError.unsupported(command.slashText)
+    }
+
     public func answer(_ requestID: String, with answers: [String: String]) async throws {
         throw AgentError.unsupported("Answering questions")
     }

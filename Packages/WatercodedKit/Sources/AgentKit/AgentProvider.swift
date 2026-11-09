@@ -143,6 +143,10 @@ public struct ProviderCapabilities: OptionSet, Sendable, Hashable {
     public static let backgroundSessions = Self(rawValue: 1 << 11)
     /// Can start a new session from any ``AgentEvent/checkpoint(_:)`` of an existing one.
     public static let branching = Self(rawValue: 1 << 12)
+    /// Can explicitly compact conversation history.
+    public static let compaction = Self(rawValue: 1 << 13)
+    /// Can set, inspect and clear a native persistent goal.
+    public static let goals = Self(rawValue: 1 << 14)
 }
 
 /// A model a provider can run.

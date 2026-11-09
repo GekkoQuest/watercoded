@@ -39,7 +39,7 @@ public struct CodexProvider: AgentProvider {
             tintHue: 0.45,
             capabilities: ProviderCapabilities([
                 .streamingText, .toolApprovals, .interrupt, .resume, .queueing, .liveSettings,
-                .customModels, .images, .branching, .planMode, .questions
+                .customModels, .images, .branching, .planMode, .questions, .compaction, .goals
             ]).union(relay == nil ? [] : .backgroundSessions), // the app server keeps running after quit
             models: [AgentModel(id: "default", displayName: "Default", isDefault: true)],
             installHint: "Install the Codex CLI, then run `codex login` once in Terminal to sign in.",

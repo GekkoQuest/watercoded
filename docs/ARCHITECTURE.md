@@ -78,6 +78,10 @@ Beyond text and tool calls, `AgentEvent` covers plans (`planProposed`), multiple
 `ProviderCapabilities` (`.questions`, `.liveSettings`, `.customModels`) plus `effortLevels`, and protocol
 extensions throw `unsupported` for anything a provider doesn't implement.
 
+Async questions use `asyncQuestionAsked`, separate from blocking `questionAsked` requests. Their cards persist in
+the transcript and remain actionable after a turn ends; answering sends ordinary conversation input instead of
+replying to a suspended provider RPC. Pending async cards also appear in Needs You without marking the agent blocked.
+
 `CurrentController` turns those events into transcript cards and status, raises `AttentionEvent`s
 (approvals, plans, questions, finished turns) that become notifications, and records working-tree snapshots
 around every turn (see ADR 0007).

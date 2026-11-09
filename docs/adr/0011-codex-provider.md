@@ -21,9 +21,12 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 | Usage | `thread/tokenUsage/updated {last, total, modelContextWindow}` after each model response; `account/rateLimits/updated {primary, secondary: {usedPercent, windowDurationMins, resetsAt}, planType}` |
 | Turn end | **`thread/status/changed {status: {type: idle}}`.** 0.167.0 never sends `turn/completed` (handled too, in case later versions do). Failures arrive as `error {willRetry: false}` beforehand. |
 | Interrupt | `turn/interrupt {threadId, turnId}` |
+| Manual compaction | `thread/compact/start {threadId}` → `{}`; progress uses turn notifications and a `contextCompaction` item |
+| Goals | `thread/goal/get {threadId}` → `{goal}`; `thread/goal/set {threadId, objective, status: active, origin: user}` → `{goal}`; `thread/goal/clear {threadId, origin: user}` → `{}` |
 | Models | `model/list` → `data[] {id, displayName, isDefault, defaultReasoningEffort, supportedReasoningEfforts, hidden}` |
 | Plan mode | Experimental API (`initialize` with `experimentalApi: true`): `turn/start {collaborationMode: {mode: plan \| default, settings: {model, reasoning_effort}}}`; the plan arrives as a `plan` item before the turn ends |
 | Questions | server request `item/tool/requestUserInput {questions: [{id, header, question, options: [{label, description}]}]}`, answered `{answers: {<id>: {answers: [label]}}}` |
+| Async questions | `item/completed` with `agentMessage {id, delivery: async, questions: [{title, options: [string] \| null}], text}`; answered with ordinary user input through `turn/steer` or `turn/start` |
 | MCP forms | server request `mcpServer/elicitation/request {serverName, mode: form \| url \| openai/form \| openaiForm \| openai/userVerification, message, requestedSchema \| url}`, answered `{action: accept \| decline \| cancel, content, _meta}` |
 | MCP tool approvals | **Also an elicitation**: `_meta.codex_approval_kind: mcp_tool_call` with an empty form; accept runs the tool. With approval policy `never`, Codex refuses MCP tool calls outright. |
 | Saved sessions | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread id>.jsonl`: a `session_meta` line (`id`, `cwd`, `originator`), then `event_msg` `item_completed` items |
@@ -39,6 +42,16 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 - Mid-session model and permission changes are sent with the next `turn/start`.
 - Branching uses `thread/fork` through the turn's id (the translator emits it as the turn's checkpoint).
 - `request_user_input` questions show as question cards.
+- `request_user_input_async` uses a different path: a completed assistant message carries `questions`, while the
+  tool call itself returns only `accepted: true`. Ignoring that metadata leaves prose without an answerable card.
+  This shape was observed in a 0.167.0 session and checked against its generated `ThreadItem` and
+  `AsyncUserInputQuestion` types. Translate it into a nonblocking question card and send the question/answer as
+  normal conversation input; there is no suspended request ID to answer. Multiple async cards retain their own
+  identities and stay answerable after the turn ends or the app restores the transcript. Relay replay deduplicates
+  cards already in the transcript. Pending questions appear in Needs You and have a shortcut above the composer.
+  Regression coverage includes a redacted fixture from the failed question, restoration, independent cards and
+  answer delivery failure. [App Server protocol](https://learn.chatgpt.com/docs/app-server) documents the
+  underlying message and turn APIs; the async question fields are from the installed CLI's generated protocol.
 - MCP elicitations: tool-call approvals become ordinary approvals; `form` (and OpenAI's variants) and `url` requests show
   as form cards (see `FormRecord`); anything else (e.g. `openai/userVerification`) is declined. Other unknown server
   requests get a JSON-RPC error. Either way the turn continues.
@@ -58,3 +71,12 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 - Re-generate the protocol with `codex app-server generate-ts --experimental --out <dir>` when upgrading. The source
   is at https://github.com/openai/codex (the app server lives in `codex-rs/app-server-protocol`).
 - Plan mode depends on the experimental API, the part most likely to change.
+- Shared `/compact` and `/goal` commands use the native RPCs, not slash text in `turn/start`.
+  Goal changes carry `origin: user` (0.167.0's generated protocol distinguishes explicit user actions from automatic
+  mutations). Setting a goal stores its objective, then Watercoded submits the objective as its first turn.
+  Goal status and clear do not submit model input. Native goal continuation remains the server's responsibility.
+  `turn/started` also marks a turn active when the server initiates compaction or a goal continuation.
+  These request shapes were checked with `codex app-server generate-ts --experimental` on 0.167.0; unit tests cover
+  payloads and lifecycle translation. Live inference for these commands has not been re-verified.
+  References: [App Server: goals and compaction](https://learn.chatgpt.com/docs/app-server),
+  [Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).

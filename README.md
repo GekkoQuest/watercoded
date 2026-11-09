@@ -25,7 +25,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.8). Tagged versions publish app downloads to
+> **Status:** early (v0.9). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
 > The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
 
@@ -37,14 +37,16 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 - **Approvals everywhere:** in the app, from the menu bar, or straight from a macOS notification (Allow / Deny),
   with a Dock badge counting what's waiting. "Always allow" rules per repository are suggested after repeat approvals.
 - **Plans and questions as cards:** Plan mode ends in a plan you can **Build** or send back with feedback;
-  multiple-choice questions are answered with a click.
+  questions appear as cards with single-choice options, Claude's multiple selections, and custom written answers.
+  Codex's async questions stay answerable while work continues and after the turn ends; an Answer shortcut above
+  the message box brings a pending question into view.
 - **Progress you can read:** the agent's task list shows as "3 of 7" above the conversation and in the sidebar;
   subagent steps are nested under their Task. A line above the message box shows the turn's time, output tokens
   and tokens per second.
 - **Live settings:** switch model, effort or permissions mid-session. Models are listed by exact version
   ("Default (Opus 5.5)"), and Auto effort shows the model's default ("Auto (Medium)"). Any custom model name works too.
-- **A real composer:** `@` to mention files, `/` for the agent's commands, and image attachments with providers
-  that enable them (currently Codex).
+- **A real composer:** `@` to mention files, `/` for shared session commands and the agent's additional commands,
+  and image attachments with providers that enable them (currently Codex).
 - **Agents delegate to agents:** ask one agent to hand part of the work to another, in any direction (Claude Code →
   Codex, Codex → Claude Code, or another model of the same agent): "have GPT-6.1-Sol write the migration". Helpers
   run as their own sessions under the first, each in its own copy of the folder, so several can work at once while
@@ -89,6 +91,29 @@ Reduce Motion is respected: the water stays still and only the level changes. He
   (`claude --resume` or `codex resume`).
 - **Storage:** Settings ▸ Storage lists worktrees by size and removes unused ones (branches are kept).
 - **Replay scripts:** save any finished session as a replayable demo or test fixture.
+
+### Composer commands
+
+Type `/` to browse commands, click one or press Tab to insert it, then Return to run it.
+Claude Code and Codex share these commands:
+
+| Command | Action |
+|---|---|
+| `/help` | List available commands, including provider additions |
+| `/status` | Show session settings and context usage |
+| `/compact` | Ask the provider to compact its conversation history |
+| `/goal [objective\|clear]` | Inspect, set or clear a native provider goal; setting one starts work |
+| `/plan [prompt]` | Enable native planning mode, optionally starting with a prompt |
+| `/model [name\|default]` | List models or change the selection |
+| `/effort [level\|auto]` | List reasoning levels or change the selection |
+| `/mode [name]` | Show or change permissions; Full Access uses the permissions menu's confirmation |
+| `/stop` | Interrupt the current turn |
+| `/verify` | Run the repository's configured check, when one is set |
+
+Commands appear according to session capabilities. Settings changes and compaction wait for an idle
+agent; `/help`, `/status`, `/stop`, and goal inspection/clearing also work during a turn. Invalid
+commands keep the draft and show an explanation. Additional provider commands pass through as messages.
+Goal evaluation and continuation belong to the provider; Watercoded does not add its own goal loop.
 
 ## Requirements
 

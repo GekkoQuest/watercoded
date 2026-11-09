@@ -127,11 +127,14 @@ public final class Workspace {
         currents.filter { $0.current.poolID == pool && (includeSettled || $0.current.status != .settled) }
     }
 
-    /// Currents blocked on the user (waiting for approval, or stalled), most recent first.
+    /// Currents needing the user (approvals, questions or failures), most recent first.
     /// Currents that are merely ready for review stay in their pool.
     public var shore: [CurrentController] {
-        currents.filter { $0.current.status == .waiting || $0.current.status == .stalled }
-            .sorted { $0.current.updatedAt > $1.current.updatedAt }
+        currents.filter {
+            $0.current.status == .waiting || $0.current.status == .stalled
+                || ($0.current.status != .settled && !$0.pendingAsyncQuestions.isEmpty)
+        }
+        .sorted { $0.current.updatedAt > $1.current.updatedAt }
     }
 
     // MARK: Pools

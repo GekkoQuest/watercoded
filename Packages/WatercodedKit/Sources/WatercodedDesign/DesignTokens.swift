@@ -30,6 +30,8 @@ public enum Motion {
 public enum Metrics {
     public static let glyphSize = CGSize(width: 22, height: 30)
     public static let composerMaxLines = 10
+    public static let suggestionVisibleRows = 8
+    public static let suggestionRowHeight: CGFloat = 30
     public static let readableWidth: CGFloat = 760
 }
 

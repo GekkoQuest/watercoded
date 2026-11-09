@@ -81,7 +81,7 @@ public struct ImageAttachment: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
-/// A command the agent understands when sent as a message (e.g. `/compact`).
+/// A composer command handled by Watercoded or passed through to the agent (e.g. `/compact`).
 public struct SlashCommand: Hashable, Codable, Sendable, Identifiable {
     public var name: String
     public var summary: String

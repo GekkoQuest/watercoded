@@ -151,13 +151,28 @@ public struct QuestionRecord: Hashable, Codable, Sendable {
 
     public var requestID: String
     public var questions: [Question]
+    /// Async questions are answered with a new message and remain actionable after a turn ends.
+    public var isAsynchronous: Bool
     /// Question text → chosen answer(s), joined with ", " for multi-select.
     public var answers: [String: String]?
 
-    public init(requestID: String, questions: [Question], answers: [String: String]? = nil) {
+    public init(
+        requestID: String, questions: [Question], answers: [String: String]? = nil, isAsynchronous: Bool = false
+    ) {
         self.requestID = requestID
         self.questions = questions
         self.answers = answers
+        self.isAsynchronous = isAsynchronous
+    }
+
+    private enum CodingKeys: String, CodingKey { case requestID, questions, answers, isAsynchronous }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        requestID = try values.decode(String.self, forKey: .requestID)
+        questions = try values.decode([Question].self, forKey: .questions)
+        answers = try values.decodeIfPresent([String: String].self, forKey: .answers)
+        isAsynchronous = try values.decodeIfPresent(Bool.self, forKey: .isAsynchronous) ?? false
     }
 
     public var isAnswered: Bool {

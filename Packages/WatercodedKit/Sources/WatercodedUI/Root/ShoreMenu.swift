@@ -26,7 +26,7 @@ public struct ShoreMenu: View {
                         Text("A plan is ready for review")
                         Button("Build") { Task { await controller.approvePlan() } }
                         Button("Review in Watercoded…") { open() }
-                    } else if let question = controller.pendingQuestion?.questions.first {
+                    } else if let question = controller.pendingQuestions.first?.questions.first {
                         Text(question.text)
                         Button("Answer in Watercoded…") { open() }
                     } else {

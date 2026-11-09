@@ -119,6 +119,7 @@ struct QuestionCard: View {
     let controller: CurrentController
     @State private var selections: [String: Set<String>] = [:]
     @State private var otherAnswers: [String: String] = [:]
+    @State private var isSubmitting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.large) {
@@ -142,11 +143,14 @@ struct QuestionCard: View {
             }
         }
         .padding(Spacing.large)
+        .disabled(isSubmitting)
         .glassEffect(.regular.tint(.orange.opacity(0.12)), in: RoundedRectangle(cornerRadius: Radius.large))
     }
 
     private var isPending: Bool {
-        !record.isAnswered && controller.pendingQuestion?.requestID == record.requestID
+        !record.isAnswered && controller.current.status != .settled
+            && (controller.pendingQuestion?.requestID == record.requestID
+                || controller.pendingAsyncQuestions.contains { $0.requestID == record.requestID })
     }
 
     /// A single single-choice question answers on click; anything else needs a Submit.
@@ -226,6 +230,10 @@ struct QuestionCard: View {
             guard let answer = answer(for: question) else { return }
             answers[question.text] = answer
         }
-        Task { await controller.answer(answers) }
+        isSubmitting = true
+        Task {
+            await controller.answer(answers, requestID: record.requestID)
+            isSubmitting = false
+        }
     }
 }
