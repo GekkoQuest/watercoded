@@ -148,7 +148,12 @@ actor CodexSession: AgentSession {
             return
         }
         guard let approval = translator.consumeApproval(requestID) else { return }
-        try reply(to: approval.rpcID, result: CodexRequests.approvalResponse(decision))
+        try reply(to: approval.rpcID, result: CodexRequests.approvalResponse(decision, kind: approval.kind))
+    }
+
+    func respondToForm(_ requestID: String, with response: FormResponse) async throws {
+        guard !ended, let rpcID = translator.consumeForm(requestID) else { return }
+        try reply(to: rpcID, result: CodexRequests.formResponse(response))
     }
 
     func answer(_ requestID: String, with answers: [String: String]) async throws {
@@ -228,6 +233,9 @@ actor CodexSession: AgentSession {
                     case let .planProposed(id, _), let .questionAsked(id, _):
                         pending[id] = event
                         order.append(id)
+                    case let .formRequested(form):
+                        pending[form.requestID] = event
+                        order.append(form.requestID)
                     default:
                         if let key = event.restoreKey {
                             latest[key] = event
@@ -235,21 +243,8 @@ actor CodexSession: AgentSession {
                     }
                 }
             case let .input(line):
-                guard let message = try? JSONValue(parsing: line) else { continue }
-                if let id = message["id"]?.int, message["method"] != nil {
-                    nextID = max(nextID, id) // our own requests: keep ids unique
-                }
-                switch message["method"]?.string {
-                case "turn/start":
-                    _ = translator.turnRequested()
-                case nil where message["id"] != nil:
-                    // Our answer to one of Codex's requests: no longer pending.
-                    let requestID = "codex-\(message["id"]?.compactString() ?? "")"
-                    pending[requestID] = nil
-                    _ = translator.consumeApproval(requestID)
-                    _ = translator.consumeQuestion(requestID)
-                default:
-                    break
+                if let answered = replayInput(line) {
+                    pending[answered] = nil
                 }
             case .error, .exited:
                 continue
@@ -268,6 +263,28 @@ actor CodexSession: AgentSession {
             if let event = pending.removeValue(forKey: id) {
                 continuation.yield(event)
             }
+        }
+    }
+
+    /// Replays one line Watercoded sent: keeps request ids unique, marks turns started, and returns the
+    /// id of a Codex request it answered (so it's no longer pending).
+    private func replayInput(_ line: String) -> String? {
+        guard let message = try? JSONValue(parsing: line) else { return nil }
+        if let id = message["id"]?.int, message["method"] != nil {
+            nextID = max(nextID, id)
+        }
+        switch message["method"]?.string {
+        case "turn/start":
+            _ = translator.turnRequested()
+            return nil
+        case nil where message["id"] != nil:
+            let requestID = "codex-\(message["id"]?.compactString() ?? "")"
+            _ = translator.consumeApproval(requestID)
+            _ = translator.consumeQuestion(requestID)
+            _ = translator.consumeForm(requestID)
+            return requestID
+        default:
+            return nil
         }
     }
 
@@ -313,15 +330,6 @@ actor CodexSession: AgentSession {
             }
             return
         }
-        if message["method"]?.string == "mcpServer/elicitation/request", let id = message["id"] {
-            // MCP servers asking for form input: decline, so the tool call fails cleanly.
-            try? reply(to: id, result: ["action": "decline", "content": .null, "_meta": .null])
-            continuation.yield(.notice(Notice(
-                .info,
-                "An MCP server asked for input Watercoded can't show yet, so it was declined."
-            )))
-            return
-        }
         if let method = message["method"]?.string, let id = message["id"],
            !CodexWireTranslator.handlesServerRequest(method) {
             // Questions, MCP elicitations and the like aren't supported yet: decline so the turn continues.
@@ -332,7 +340,23 @@ actor CodexSession: AgentSession {
             )))
             return
         }
-        for event in translator.translate(message) {
+        let events = translator.translate(message)
+        if message["method"]?.string == "mcpServer/elicitation/request", events.isEmpty, let id = message["id"] {
+            // A kind of request Watercoded can't show (e.g. a verification challenge): decline it.
+            try? reply(to: id, result: CodexRequests.formResponse(.decline))
+            continuation.yield(.notice(Notice(
+                .info,
+                "An MCP server asked for something Watercoded can't show yet, so it was declined."
+            )))
+            return
+        }
+        for event in events {
+            if configuration.permissionMode == .fullAccess, case let .permissionRequested(request) = event,
+               let approval = translator.consumeApproval(request.id) {
+                // Full Access: approve whatever Codex asks for, without showing it.
+                try? reply(to: approval.rpcID, result: CodexRequests.approvalResponse(.allow, kind: approval.kind))
+                continue
+            }
             continuation.yield(event)
         }
     }

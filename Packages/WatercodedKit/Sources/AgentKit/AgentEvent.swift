@@ -42,6 +42,9 @@ public enum AgentEvent: Sendable, Hashable {
     case environmentReported(AgentEnvironment)
     /// The agent asked multiple-choice questions. Answer with ``AgentSession/answer(_:with:)``.
     case questionAsked(requestID: String, questions: [QuestionRecord.Question])
+    /// An MCP server asks the user for input (a short form, or a link to open). Answer with
+    /// ``AgentSession/respondToForm(_:with:)``.
+    case formRequested(FormRecord)
     /// A point the conversation can later be resumed or branched from (the provider's message ID).
     case checkpoint(String)
     /// A non-fatal message worth showing inline (e.g. an automatic denial).

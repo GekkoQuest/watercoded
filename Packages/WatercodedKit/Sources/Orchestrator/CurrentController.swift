@@ -40,6 +40,8 @@ public final class CurrentController: Identifiable {
     public internal(set) var pendingPermissions: [PermissionRequest] = []
     public internal(set) var pendingPlan: PlanRecord?
     public internal(set) var pendingQuestion: QuestionRecord?
+    /// An MCP server's form waiting for the user.
+    public internal(set) var pendingForm: FormRecord?
     public internal(set) var isTurnActive = false
     public internal(set) var isSessionLive = false
     public internal(set) var activity = Activity()
@@ -115,7 +117,7 @@ public final class CurrentController: Identifiable {
 
     /// Anything the agent is waiting on the user for.
     public var isAwaitingUser: Bool {
-        !pendingPermissions.isEmpty || pendingPlan != nil || pendingQuestion != nil
+        !pendingPermissions.isEmpty || pendingPlan != nil || pendingQuestion != nil || pendingForm != nil
     }
 
     /// Whether the provider's prompt cache has probably expired, making the next turn slower and
@@ -374,7 +376,7 @@ public final class CurrentController: Identifiable {
     }
 
     /// Bookkeeping shared by approvals, plans and questions.
-    private func resolve(
+    func resolve(
         _ requestID: String,
         allowed: Bool,
         reply: (any AgentSession) async throws -> Void
@@ -396,6 +398,7 @@ public final class CurrentController: Identifiable {
         pendingPermissions.removeAll()
         pendingPlan = nil
         pendingQuestion = nil
+        pendingForm = nil
     }
 
     // MARK: Helpers

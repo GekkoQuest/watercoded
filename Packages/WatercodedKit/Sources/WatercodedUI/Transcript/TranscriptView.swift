@@ -90,6 +90,7 @@ private struct TranscriptRow: View {
         case let .thinking(record): ThinkingView(record: record)
         case let .plan(record): PlanCard(record: record, controller: controller)
         case let .question(record): QuestionCard(record: record, controller: controller)
+        case let .form(record): FormCard(record: record, controller: controller)
         }
     }
 }

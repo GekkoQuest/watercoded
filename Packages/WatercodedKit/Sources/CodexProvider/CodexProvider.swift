@@ -16,6 +16,8 @@ public struct CodexProvider: AgentProvider {
     private let relay: RelayCommand?
     /// Where Codex saves sessions (`~/.codex/sessions`), for importing them.
     let sessionsDirectory: URL
+    /// Extra `codex app-server` arguments (tests use `-c` to add an MCP server).
+    var extraArguments: [String] = []
 
     public init(
         executableName: String = "codex",
@@ -84,7 +86,7 @@ public struct CodexProvider: AgentProvider {
         }
         let spec = await ProcessSpec(
             executable: executable,
-            arguments: ["app-server"],
+            arguments: ["app-server"] + extraArguments,
             workingDirectory: configuration.workingDirectory,
             environment: environment.environment()
         )

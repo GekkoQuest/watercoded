@@ -24,19 +24,24 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 | Models | `model/list` → `data[] {id, displayName, isDefault, defaultReasoningEffort, supportedReasoningEfforts, hidden}` |
 | Plan mode | Experimental API (`initialize` with `experimentalApi: true`): `turn/start {collaborationMode: {mode: plan \| default, settings: {model, reasoning_effort}}}`; the plan arrives as a `plan` item before the turn ends |
 | Questions | server request `item/tool/requestUserInput {questions: [{id, header, question, options: [{label, description}]}]}`, answered `{answers: {<id>: {answers: [label]}}}` |
+| MCP forms | server request `mcpServer/elicitation/request {serverName, mode: form \| url \| openai/form \| openaiForm \| openai/userVerification, message, requestedSchema \| url}`, answered `{action: accept \| decline \| cancel, content, _meta}` |
+| MCP tool approvals | **Also an elicitation**: `_meta.codex_approval_kind: mcp_tool_call` with an empty form; accept runs the tool. With approval policy `never`, Codex refuses MCP tool calls outright. |
 | Saved sessions | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread id>.jsonl`: a `session_meta` line (`id`, `cwd`, `originator`), then `event_msg` `item_completed` items |
 
 ## Decision
 - `CodexProvider` launches the user's own `codex app-server`; the CLI keeps its own credentials (ADR 0003).
 - Permission modes map to Codex's approval policy and sandbox: Ask → `untrusted` + `read-only`;
-  Accept Edits → `on-request` + `workspace-write`; Full Access → `never` + `danger-full-access`;
+  Accept Edits → `on-request` + `workspace-write`; Full Access → `on-request` + `danger-full-access`, with the session
+  approving whatever Codex asks for itself (`never` would block every MCP tool);
   Plan → `on-request` + `read-only` with `collaborationMode: plan`.
 - Plan mode works like Codex's own "Implement this plan?": the plan is proposed when the planning turn ends; Build
   sends "Implement the plan." in default mode with Ask's permissions, and feedback keeps planning.
 - Mid-session model and permission changes are sent with the next `turn/start`.
 - Branching uses `thread/fork` through the turn's id (the translator emits it as the turn's checkpoint).
-- `request_user_input` questions show as question cards. MCP elicitations (arbitrary forms) are declined with a proper
-  response; other unknown server requests get a JSON-RPC error. Either way the turn continues, and a notice says so.
+- `request_user_input` questions show as question cards.
+- MCP elicitations: tool-call approvals become ordinary approvals; `form` (and OpenAI's variants) and `url` requests show
+  as form cards (see `FormRecord`); anything else (e.g. `openai/userVerification`) is declined. Other unknown server
+  requests get a JSON-RPC error. Either way the turn continues.
 - Background sessions run `codex app-server` under Watercoded's relay (ADR 0009). Reattaching replays the log to rebuild
   the thread, pending approvals, questions and plan; the app server still holds the thread, so no resume is needed.
 - Sessions run in Terminal can be imported from the saved session files; ones Watercoded started (`originator:

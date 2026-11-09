@@ -9,6 +9,7 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
 | Feature | Wire format |
 |---|---|
 | Approvals | `control_request` `can_use_tool` → `control_response` `{behavior: allow, updatedInput}` / `{behavior: deny, message}` |
+| MCP forms | `control_request` `elicitation {mcp_server_name, message, mode: form \| url, url, requested_schema, property_order}` → `control_response` `{action: accept \| decline \| cancel, content}` (forwarded to stdio clients; verified with an elicitation test server, `Tests/Support/elicitation-mcp-server.py`) |
 | Questions | `can_use_tool` for `AskUserQuestion`; answer with `updatedInput.answers[questionText] = label` |
 | Plans | `can_use_tool` for `ExitPlanMode` with `input.plan` (Markdown); allow = build, deny with feedback = keep planning |
 | Live settings | `control_request` `set_permission_mode {mode}` and `set_model {model}` |

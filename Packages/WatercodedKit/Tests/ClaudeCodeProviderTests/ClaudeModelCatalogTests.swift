@@ -73,3 +73,35 @@ struct ClaudeBranchingTests {
         #expect(!arguments.contains("--fork-session"))
     }
 }
+
+@Suite("Claude MCP forms")
+struct ClaudeFormTests {
+    @Test func `elicitation control requests become forms and answers go back`() {
+        var translator = ClaudeWireTranslator()
+        // As forwarded by claude 2.1.319.
+        let events = translator.translate([
+            "type": "control_request", "request_id": "req-1",
+            "request": [
+                "subtype": "elicitation",
+                "mcp_server_name": "elicit",
+                "message": "Please fill in your profile.",
+                "mode": "form",
+                "property_order": ["name", "role"],
+                "requested_schema": ["type": "object", "properties": [
+                    "role": ["type": "string", "oneOf": [["const": "dev", "title": "Developer"]]],
+                    "name": ["type": "string", "title": "Your name"]
+                ], "required": ["name"]]
+            ]
+        ])
+        guard case let .formRequested(form)? = events.first else {
+            Issue.record("Expected a form")
+            return
+        }
+        #expect(form.requestID == "req-1")
+        #expect(form.fields.map(\.key) == ["name", "role"])
+        let reply = ClaudeControlMessages.formResponse(requestID: "req-1", response: .accept(["name": "Ada"]))
+        #expect(reply["response"]?["response"] == ["action": "accept", "content": ["name": "Ada"]])
+        #expect(ClaudeControlMessages.formResponse(requestID: "r", response: .decline)["response"]?["response"]
+            == ["action": "decline"])
+    }
+}

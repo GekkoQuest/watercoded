@@ -167,6 +167,48 @@ struct ClaudeCodeLiveTests {
         #expect(written?.trimmingCharacters(in: .whitespacesAndNewlines) == "relay")
     }
 
+    @Test func `MCP forms reach the user and the answers reach the tool`() async throws {
+        let server = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Support/elicitation-mcp-server.py")
+        let folder = FileManager.default.temporaryDirectory.appending(path: "watercoded-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let config = folder.appending(path: "mcp.json")
+        let servers: JSONValue = ["mcpServers": ["elicit": ["command": "python3", "args": [.string(server.path)]]]]
+        try servers.compactString().write(to: config, atomically: true, encoding: .utf8)
+
+        var provider = ClaudeCodeProvider()
+        provider.extraArguments = ["--mcp-config", config.path]
+        let session = try await provider.startSession(SessionConfiguration(workingDirectory: folder, model: "haiku"))
+        try await session.send(UserMessage(
+            text: "Call the mcp__elicit__ask_profile tool once, then reply with exactly what it returned."
+        ))
+        var form: FormRecord?
+        var reply = ""
+        var finished = false
+        for await event in session.events {
+            switch event {
+            case let .permissionRequested(request):
+                try await session.respond(to: request.id, with: .allow)
+            case let .formRequested(record):
+                form = record
+                try await session.respondToForm(record.requestID, with: .accept(["name": "Ada", "role": "dev"]))
+            case let .messageCompleted(_, text):
+                reply = text
+            case .turnFinished:
+                finished = true
+            default:
+                break
+            }
+            if finished {
+                break
+            }
+        }
+        await session.terminate()
+        #expect(form?.fields.map(\.key) == ["name", "role", "subscribe"])
+        #expect(reply.contains("Ada"))
+    }
+
     static var relayExecutable: URL? {
         var directory = URL(filePath: #filePath).deletingLastPathComponent()
         while directory.path != "/",

@@ -142,6 +142,58 @@ struct CodexLiveTests {
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "made-by-codex.txt").path))
     }
 
+    @Test(arguments: [PermissionMode.ask, .fullAccess])
+    func `MCP tools run and their forms reach the user`(mode: PermissionMode) async throws {
+        let server = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Support/elicitation-mcp-server.py")
+        var provider = CodexProvider()
+        provider.extraArguments = [
+            "-c",
+            "mcp_servers.elicit.command=\"python3\"",
+            "-c",
+            "mcp_servers.elicit.args=[\"\(server.path)\"]"
+        ]
+        let folder = FileManager.default.temporaryDirectory.appending(path: "watercoded-codex-mcp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let session = try await provider.startSession(SessionConfiguration(
+            workingDirectory: folder,
+            permissionMode: mode
+        ))
+        try await session.send(UserMessage(
+            text: "Call the ask_profile tool from the elicit MCP server once, then reply with exactly what it returned."
+        ))
+        var approvals = 0
+        var form: FormRecord?
+        var reply = ""
+        var outcome: TurnOutcome?
+        for await event in session.events {
+            switch event {
+            case let .permissionRequested(request):
+                approvals += 1
+                try await session.respond(to: request.id, with: .allow)
+            case let .formRequested(record):
+                form = record
+                try await session.respondToForm(record.requestID, with: .accept(["name": "Ada", "role": "dev"]))
+            case let .messageCompleted(_, text):
+                reply = text
+            case let .turnFinished(result):
+                outcome = result
+            default:
+                break
+            }
+            if outcome != nil {
+                break
+            }
+        }
+        await session.terminate()
+        #expect(form?.fields.map(\.key).contains("name") == true)
+        #expect(mode == .fullAccess ? approvals == 0 : approvals >= 1) // Full Access never asks
+        #expect(reply.contains("Ada"))
+        #expect(outcome == .completed)
+    }
+
     @Test func `the model catalog comes from the account`() async throws {
         let catalog = try #require(await CodexProvider().modelCatalog())
         #expect(!catalog.models.isEmpty)

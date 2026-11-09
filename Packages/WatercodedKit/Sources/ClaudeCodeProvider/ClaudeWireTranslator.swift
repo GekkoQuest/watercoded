@@ -21,6 +21,22 @@ struct ClaudeWireTranslator {
         return [.checkpoint(uuid)]
     }
 
+    /// An MCP server's elicitation, forwarded by the CLI (verified with 2.1.319): `mcp_server_name`, `message`,
+    /// `mode` (`form` or `url`), `url`, `requested_schema` and `property_order`. Answered with `{action, content}`.
+    static func form(requestID: String, request: JSONValue) -> AgentEvent {
+        let isLink = request["mode"]?.string == "url"
+        return .formRequested(FormRecord(
+            requestID: requestID,
+            serverName: request["display_name"]?.string ?? request["mcp_server_name"]?.string,
+            message: request["message"]?.string ?? "An MCP server needs your input.",
+            fields: isLink ? [] : FormRecord.fields(
+                from: request["requested_schema"],
+                order: request["property_order"]?.array?.compactMap(\.string)
+            ),
+            url: isLink ? request["url"]?.string.flatMap(URL.init(string:)) : nil
+        ))
+    }
+
     mutating func translate(_ message: JSONValue) -> [AgentEvent] {
         switch message["type"]?.string {
         case "system": translateSystem(message)
@@ -163,6 +179,10 @@ struct ClaudeWireTranslator {
     }
 
     private mutating func translateControlRequest(_ message: JSONValue) -> [AgentEvent] {
+        if let requestID = message["request_id"]?.string, let request = message["request"],
+           request["subtype"]?.string == "elicitation" {
+            return [Self.form(requestID: requestID, request: request)]
+        }
         guard let requestID = message["request_id"]?.string,
               let request = message["request"],
               request["subtype"]?.string == "can_use_tool"

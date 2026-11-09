@@ -98,6 +98,11 @@ actor ClaudeCodeSession: AgentSession {
         try write(ClaudeControlMessages.questionAnswer(requestID: requestID, input: input, answers: answers))
     }
 
+    func respondToForm(_ requestID: String, with response: FormResponse) async throws {
+        guard !ended else { throw AgentError.sessionClosed }
+        try write(ClaudeControlMessages.formResponse(requestID: requestID, response: response))
+    }
+
     func setPermissionMode(_ mode: PermissionMode) async throws {
         guard !ended else { throw AgentError.sessionClosed }
         try write(ClaudeControlMessages.setPermissionMode(requestID: nextRequestID(), mode: mode))
@@ -151,6 +156,9 @@ actor ClaudeCodeSession: AgentSession {
                     case let .planProposed(id, _), let .questionAsked(id, _):
                         pending[id] = event
                         order.append(id)
+                    case let .formRequested(form):
+                        pending[form.requestID] = event
+                        order.append(form.requestID)
                     case .sessionStarted: latest["session"] = event
                     case .environmentReported: latest["environment"] = event
                     case .commandsAvailable: latest["commands"] = event

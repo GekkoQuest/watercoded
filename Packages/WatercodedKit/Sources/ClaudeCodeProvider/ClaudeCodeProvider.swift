@@ -16,6 +16,8 @@ public struct ClaudeCodeProvider: AgentProvider {
     private let relay: RelayCommand?
     /// Where Claude Code keeps its sessions (`~/.claude/projects`).
     let projectsDirectory: URL
+    /// Extra `claude` arguments (tests use `--mcp-config` to add an MCP server).
+    var extraArguments: [String] = []
 
     public init(
         executableName: String = "claude",
@@ -117,7 +119,7 @@ public struct ClaudeCodeProvider: AgentProvider {
         }
         let spec = await ProcessSpec(
             executable: executable,
-            arguments: ClaudeCodeArguments.make(for: configuration),
+            arguments: ClaudeCodeArguments.make(for: configuration) + extraArguments,
             workingDirectory: configuration.workingDirectory,
             environment: ClaudeCodeArguments.environment(base: environment.environment())
         )

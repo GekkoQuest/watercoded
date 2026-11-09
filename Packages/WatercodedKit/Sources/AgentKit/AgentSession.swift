@@ -25,6 +25,9 @@ public protocol AgentSession: AnyObject, Sendable {
     /// question text → chosen label(s). Requires ``ProviderCapabilities/questions``.
     func answer(_ requestID: String, with answers: [String: String]) async throws
 
+    /// Answers an ``AgentEvent/formRequested(_:)``.
+    func respondToForm(_ requestID: String, with response: FormResponse) async throws
+
     /// Changes the permission mode without restarting. Requires ``ProviderCapabilities/liveSettings``.
     func setPermissionMode(_ mode: PermissionMode) async throws
 
@@ -47,6 +50,10 @@ extension AgentSession {
 
     public func setPermissionMode(_ mode: PermissionMode) async throws {
         throw AgentError.unsupported("Changing permissions mid-session")
+    }
+
+    public func respondToForm(_ requestID: String, with response: FormResponse) async throws {
+        throw AgentError.unsupported("MCP forms")
     }
 
     public func setModel(_ model: String?) async throws {
@@ -98,6 +105,23 @@ public struct SessionConfiguration: Sendable, Hashable {
         self.additionalDirectories = additionalDirectories
         self.relayDirectory = relayDirectory
         self.branchAt = branchAt
+    }
+}
+
+/// The user's answer to an MCP form (MCP elicitation actions).
+public enum FormResponse: Sendable, Hashable {
+    /// Submitted; for link forms, the user opened the link and continued. Values by field key.
+    case accept([String: JSONValue])
+    case decline
+    case cancel
+
+    /// The MCP `{action, content}` result both Claude Code and Codex forward to the server.
+    public var payload: (action: String, content: JSONValue) {
+        switch self {
+        case let .accept(values): ("accept", .object(values))
+        case .decline: ("decline", .null)
+        case .cancel: ("cancel", .null)
+        }
     }
 }
 

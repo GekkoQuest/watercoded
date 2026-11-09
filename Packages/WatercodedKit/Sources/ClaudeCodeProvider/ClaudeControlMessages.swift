@@ -50,6 +50,19 @@ enum ClaudeControlMessages {
         return permissionResponse(requestID: requestID, decision: .allow, input: .object(updated))
     }
 
+    /// Reply to an `elicitation` control request: the MCP `{action, content}` result.
+    static func formResponse(requestID: String, response: FormResponse) -> JSONValue {
+        let payload = response.payload
+        var result: [String: JSONValue] = ["action": .string(payload.action)]
+        if payload.content != .null {
+            result["content"] = payload.content
+        }
+        return [
+            "type": "control_response",
+            "response": ["subtype": "success", "request_id": .string(requestID), "response": .object(result)]
+        ]
+    }
+
     /// Reply to a `can_use_tool` control request.
     static func permissionResponse(requestID: String, decision: PermissionDecision, input: JSONValue) -> JSONValue {
         let response: JSONValue = switch decision {

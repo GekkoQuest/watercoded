@@ -23,7 +23,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.3). There's no prebuilt download yet: you build it from source, which takes a few minutes
+> **Status:** early (v0.4). There's no prebuilt download yet: you build it from source, which takes a few minutes
 > once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
@@ -67,6 +67,8 @@ Reduce Motion is respected: the water stays still and only the level changes. He
   worktree (instant APFS copies, opt-in per item) and run a setup script before the agent starts.
 - **Extra folders:** let agents read and edit folders outside the repository, such as a shared library.
 - **See what the agent sees:** the Setup inspector lists its MCP servers, instruction files, skills and rules.
+- **MCP forms:** when an MCP server asks for input (a short form, or a link to sign in), it appears as a card in the
+  conversation; your answers go straight back to the tool. Works with Claude Code and Codex.
 
 ### Getting around
 

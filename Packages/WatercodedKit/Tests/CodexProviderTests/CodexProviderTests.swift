@@ -186,6 +186,97 @@ struct CodexWireTranslationTests {
             .collaborationMode(planning: false, model: "m", effort: "low")["settings"]?["model"] == "m")
     }
 
+    @Test func `MCP tool approvals become ordinary approvals`() {
+        var translator = CodexWireTranslator()
+        // Codex's own approval for an MCP tool call, as seen live with codex-cli 0.167.0.
+        let approval = translator.translate([
+            "id": 3, "method": "mcpServer/elicitation/request",
+            "params": [
+                "threadId": "t",
+                "turnId": "u",
+                "serverName": "elicit",
+                "mode": "form",
+                "_meta": ["codex_approval_kind": "mcp_tool_call", "tool_name": "ask_profile"],
+                "message": "Allow the elicit MCP server to run tool \"ask_profile\"?",
+                "requestedSchema": ["type": "object", "properties": [:]]
+            ]
+        ])
+        guard case let .permissionRequested(request)? = approval.first else {
+            Issue.record("Expected an approval")
+            return
+        }
+        #expect(request.toolName == "elicit.ask_profile")
+        #expect(request.kind == .mcp)
+        let pending = translator.consumeApproval(request.id)
+        #expect(pending?.kind == .mcpTool)
+        #expect(CodexRequests.approvalResponse(.allow, kind: .mcpTool)["action"] == "accept")
+        #expect(CodexRequests.approvalResponse(.deny(reason: ""), kind: .mcpTool)["action"] == "decline")
+    }
+
+    @Test func `MCP forms become form cards and answers go back`() {
+        var translator = CodexWireTranslator()
+        let form = translator.translate([
+            "id": 4, "method": "mcpServer/elicitation/request",
+            "params": [
+                "threadId": "t",
+                "serverName": "elicit",
+                "mode": "form",
+                "_meta": .null,
+                "message": "Please fill in your profile.",
+                "requestedSchema": [
+                    "type": "object",
+                    "properties": ["name": ["type": "string"]],
+                    "required": ["name"]
+                ]
+            ]
+        ])
+        guard case let .formRequested(record)? = form.first else {
+            Issue.record("Expected a form")
+            return
+        }
+        #expect(record.serverName == "elicit")
+        #expect(record.fields.map(\.key) == ["name"])
+        #expect(translator.consumeForm(record.requestID) == 4)
+        #expect(CodexRequests.formResponse(.accept(["name": "Ada"])) == [
+            "action": "accept",
+            "content": ["name": "Ada"],
+            "_meta": .null
+        ])
+    }
+
+    @Test func `link forms open a URL and unknown kinds are left to decline`() {
+        var translator = CodexWireTranslator()
+        let link = translator.translate([
+            "id": 5, "method": "mcpServer/elicitation/request",
+            "params": [
+                "serverName": "s",
+                "mode": "url",
+                "message": "Sign in",
+                "url": "https://example.com/auth",
+                "elicitationId": "e1",
+                "_meta": .null
+            ]
+        ])
+        guard case let .formRequested(linkForm)? = link.first else {
+            Issue.record("Expected a link form")
+            return
+        }
+        #expect(linkForm.url?.host() == "example.com")
+
+        let unsupported = translator.translate([
+            "id": 6, "method": "mcpServer/elicitation/request",
+            "params": [
+                "serverName": "s",
+                "mode": "openai/userVerification",
+                "title": "t",
+                "description": "d",
+                "challenge": "c",
+                "_meta": .null
+            ]
+        ])
+        #expect(unsupported.isEmpty) // the session declines it
+    }
+
     @Test func `plans become the task list`() {
         let tasks = CodexWireTranslator.tasks(from: [
             ["step": "Read the code", "status": "completed"],
@@ -232,7 +323,10 @@ struct CodexRequestTests {
     @Test func `permission modes map to approval policies and sandboxes`() {
         #expect(CodexRequests.policy(for: .ask) == ("untrusted", "read-only"))
         #expect(CodexRequests.policy(for: .acceptEdits) == ("on-request", "workspace-write"))
-        #expect(CodexRequests.policy(for: .fullAccess) == ("never", "danger-full-access"))
+        #expect(CodexRequests.policy(for: .fullAccess) == (
+            "on-request",
+            "danger-full-access"
+        )) // "never" blocks MCP tools
         #expect(CodexRequests.sandboxPolicy(for: .fullAccess, writableRoots: [])["type"] == "dangerFullAccess")
         #expect(CodexRequests.threadParameters(base)["sandbox"] == "read-only")
     }

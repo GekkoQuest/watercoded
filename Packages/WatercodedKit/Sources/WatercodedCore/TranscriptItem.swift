@@ -11,6 +11,7 @@ public struct TranscriptItem: Identifiable, Hashable, Codable, Sendable {
         case thinking(ThinkingRecord)
         case plan(PlanRecord)
         case question(QuestionRecord)
+        case form(FormRecord)
     }
 
     public let id: UUID

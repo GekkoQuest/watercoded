@@ -116,8 +116,8 @@ extension ReplayScript {
                 steps.append(.proposePlan(markdown: record.markdown))
             case let .question(record):
                 steps.append(.askQuestion(record.questions))
-            case .notice:
-                continue
+            case .notice, .form:
+                continue // forms came from an MCP server; a replay has none
             }
         }
         self.init(steps: steps)

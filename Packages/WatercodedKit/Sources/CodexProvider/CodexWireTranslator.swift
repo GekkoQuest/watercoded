@@ -10,7 +10,7 @@ import WatercodedCore
 struct CodexWireTranslator {
     /// An approval Codex is waiting on: the JSON-RPC request to answer, and what kind it is.
     struct PendingApproval: Equatable {
-        enum Kind: Equatable { case command, fileChange }
+        enum Kind: Equatable { case command, fileChange, mcpTool }
 
         let rpcID: JSONValue
         let kind: Kind
@@ -36,6 +36,8 @@ struct CodexWireTranslator {
     private var pendingPlanID: String?
     /// Questions Codex is waiting on: the JSON-RPC request, and question text → Codex's question id.
     private var pendingQuestions: [String: (rpcID: JSONValue, ids: [String: String])] = [:]
+    /// MCP forms waiting for the user: their JSON-RPC request.
+    private var pendingForms: [String: JSONValue] = [:]
 
     // MARK: Driven by the session
 
@@ -93,6 +95,10 @@ struct CodexWireTranslator {
         pendingQuestions.removeValue(forKey: requestID)
     }
 
+    mutating func consumeForm(_ requestID: String) -> JSONValue? {
+        pendingForms.removeValue(forKey: requestID)
+    }
+
     mutating func modelChanged(to model: String?) {
         if let model {
             self.model = model
@@ -101,8 +107,10 @@ struct CodexWireTranslator {
 
     /// Server requests Watercoded answers through the UI. Anything else gets an error reply.
     static func handlesServerRequest(_ method: String) -> Bool {
-        ["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/tool/requestUserInput"]
-            .contains(method)
+        [
+            "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/tool/requestUserInput",
+            "mcpServer/elicitation/request"
+        ].contains(method)
     }
 
     // MARK: Incoming messages
@@ -257,9 +265,46 @@ struct CodexWireTranslator {
             ))]
         case "item/tool/requestUserInput":
             return questions(params, rpcID: rpcID, requestID: requestID)
+        case "mcpServer/elicitation/request":
+            return elicitation(params, rpcID: rpcID, requestID: requestID)
         default:
             return []
         }
+    }
+
+    /// MCP elicitations. Codex also routes its own MCP tool-call approvals through these
+    /// (`_meta.codex_approval_kind: mcp_tool_call`, an empty form), so those become ordinary approvals.
+    /// Returns no events for modes Watercoded can't show (the session then declines).
+    private mutating func elicitation(_ params: JSONValue, rpcID: JSONValue, requestID: String) -> [AgentEvent] {
+        let server = params["serverName"]?.string
+        let meta = params["_meta"]
+        if meta?["codex_approval_kind"]?.string == "mcp_tool_call" {
+            pendingApprovals[requestID] = PendingApproval(rpcID: rpcID, kind: .mcpTool)
+            let tool = meta?["tool_name"]?.string ?? "tool"
+            return [.permissionRequested(PermissionRequest(
+                id: requestID,
+                toolName: "\(server ?? "mcp").\(tool)",
+                kind: .mcp,
+                summary: params["message"]?.string ?? "Run \(tool)?",
+                input: meta?["tool_params"] ?? [:]
+            ))]
+        }
+        let message = params["message"]?.string ?? "An MCP server needs your input."
+        let form: FormRecord
+        switch params["mode"]?.string {
+        case "form", "openai/form", "openaiForm":
+            form = FormRecord(
+                requestID: requestID, serverName: server, message: message,
+                fields: FormRecord.fields(from: params["requestedSchema"])
+            )
+        case "url":
+            guard let url = params["url"]?.string.flatMap(URL.init(string:)) else { return [] }
+            form = FormRecord(requestID: requestID, serverName: server, message: message, url: url)
+        default:
+            return [] // e.g. openai/userVerification
+        }
+        pendingForms[requestID] = rpcID
+        return [.formRequested(form)]
     }
 
     /// Codex's `request_user_input` tool (mainly in plan mode): headed questions with labelled options.

@@ -25,11 +25,8 @@ extension CurrentController {
             streamingText += text
         case let .checkpoint(id):
             lastCheckpoint = id
-        case .generationStarted:
-            turnStats?.generationStarted()
-        case let .generationFinished(tokens):
-            turnStats?.generationFinished(outputTokens: tokens)
-            update { $0.outputTokens = ($0.outputTokens ?? 0) + tokens }
+        case .generationStarted, .generationFinished:
+            recordGeneration(event)
         case let .messageCompleted(_, text):
             streamingText = ""
             append(.assistant(text: text))
@@ -50,6 +47,8 @@ extension CurrentController {
             handlePlan(requestID: requestID, markdown: markdown)
         case let .questionAsked(requestID, questions):
             handleQuestion(requestID: requestID, questions: questions)
+        case let .formRequested(form):
+            handleForm(form)
         case let .tasksUpdated(items):
             update { $0.tasks = items }
         case let .contextCompacted(pre, post):
@@ -230,6 +229,19 @@ extension CurrentController {
         streamingText = ""
         if !text.isEmpty {
             append(.assistant(text: text))
+        }
+    }
+
+    /// Timing and output tokens for the turn stats line and the session's total.
+    private func recordGeneration(_ event: AgentEvent) {
+        switch event {
+        case .generationStarted:
+            turnStats?.generationStarted()
+        case let .generationFinished(tokens):
+            turnStats?.generationFinished(outputTokens: tokens)
+            update { $0.outputTokens = ($0.outputTokens ?? 0) + tokens }
+        default:
+            break
         }
     }
 }

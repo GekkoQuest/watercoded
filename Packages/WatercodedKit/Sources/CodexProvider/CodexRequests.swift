@@ -16,14 +16,15 @@ enum CodexRequests {
     ///
     /// - Ask: asks before edits (read-only sandbox) and before commands it doesn't know are safe.
     /// - Accept Edits: edits the workspace freely; commands run sandboxed to it and ask to go further.
-    /// - Full Access: no sandbox, never asks.
+    /// - Full Access: no sandbox. The policy stays `on-request` because `never` makes Codex refuse MCP tool
+    ///   calls outright; the session approves anything Codex asks for itself instead.
     /// - Plan: read-only, so exploring never needs approval and nothing can change.
     static func policy(for mode: PermissionMode) -> (approval: String, sandbox: String) {
         switch mode {
         case .plan: ("on-request", "read-only")
         case .ask: ("untrusted", "read-only")
         case .acceptEdits: ("on-request", "workspace-write")
-        case .fullAccess: ("never", "danger-full-access")
+        case .fullAccess: ("on-request", "danger-full-access")
         }
     }
 
@@ -115,10 +116,22 @@ enum CodexRequests {
         return ["answers": .object(result)]
     }
 
-    static func approvalResponse(_ decision: PermissionDecision) -> JSONValue {
-        switch decision {
-        case .allow: ["decision": "accept"]
-        case .deny: ["decision": "decline"]
+    static func approvalResponse(
+        _ decision: PermissionDecision,
+        kind: CodexWireTranslator.PendingApproval.Kind = .command
+    )
+        -> JSONValue {
+        if kind == .mcpTool { // answered as an MCP elicitation
+            return formResponse(decision == .allow ? .accept([:]) : .decline)
         }
+        switch decision {
+        case .allow: return ["decision": "accept"]
+        case .deny: return ["decision": "decline"]
+        }
+    }
+
+    static func formResponse(_ response: FormResponse) -> JSONValue {
+        let payload = response.payload
+        return ["action": .string(payload.action), "content": payload.content, "_meta": .null]
     }
 }
