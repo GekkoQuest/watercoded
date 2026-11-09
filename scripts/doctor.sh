@@ -55,5 +55,18 @@ else
   warn "Claude Code CLI not found (optional)" "Install: https://code.claude.com/docs/en/setup, then run \`claude\` once to sign in"
 fi
 
+# Keep in sync with CodexProvider's testedVersion and the README's Requirements.
+codex_tested="0.167.0"
+if command -v codex >/dev/null 2>&1; then
+  codex_version=$(codex --version 2>/dev/null | awk '{print $NF}')
+  if ! codex login status 2>&1 | grep -qi "logged in using"; then
+    warn "Codex $codex_version isn't signed in (optional)" "Run: codex login"
+  elif [ "$codex_version" = "$codex_tested" ]; then ok "Codex $codex_version"; else
+    warn "Codex $codex_version (tested with $codex_tested)" "It may work, but Watercoded relies on Codex's experimental app server. Report problems as issues."
+  fi
+else
+  warn "Codex CLI not found (optional)" "Install: https://developers.openai.com/codex/cli, then run \`codex login\`"
+fi
+
 echo
 if [ "$failures" -eq 0 ]; then echo "All set."; else echo "$failures problem(s) to fix."; exit 1; fi

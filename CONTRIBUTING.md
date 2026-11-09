@@ -50,7 +50,7 @@ project.yml               XcodeGen spec
   Look for any `✘` or a non-zero exit instead. You'll also see "Executed 0 tests" from XCTest; that's expected.
 - Run one module's tests with `swift test --package-path Packages/WatercodedKit --filter GitKitTests`.
 - Live tests run the real `claude` CLI and **spend your usage**. They're skipped unless you opt in:
-  `WATERCODED_LIVE_CLAUDE=1 make test`.
+  `WATERCODED_LIVE_CLAUDE=1 make test` (Claude Code) or `WATERCODED_LIVE_CODEX=1 make test` (Codex).
 - Swift Testing (`import Testing`, `@Test`, `#expect`), one test target per module.
 - Provider translators are tested against recorded fixtures. Re-record them when a CLI changes its format, and redact paths and secrets.
 - Prefer real dependencies in temporary directories (git repos) over mocks, and `ReplayProvider(pace: 0)` for orchestration.

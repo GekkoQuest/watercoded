@@ -48,6 +48,8 @@ targets:
       - package: WatercodedKit
         product: ClaudeCodeProvider
       - package: WatercodedKit
+        product: CodexProvider
+      - package: WatercodedKit
         product: ReplayProvider
       - package: WatercodedKit
         product: OnDeviceIntelligence

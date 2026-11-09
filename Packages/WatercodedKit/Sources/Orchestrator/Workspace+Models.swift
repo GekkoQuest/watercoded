@@ -70,7 +70,7 @@ public struct ModelOptions {
     }
 
     private var defaultModelID: String? {
-        configuredModel ?? workspace.resolvedModel(for: nil, provider: descriptor.id)
+        configuredModel ?? catalog?.defaultModelID ?? workspace.resolvedModel(for: nil, provider: descriptor.id)
     }
 
     private var defaultModelName: String? {

@@ -25,10 +25,13 @@ public struct ModelCatalog: Sendable, Hashable {
     public let models: [Model]
     /// Alias → full ID, e.g. `opus` → `claude-opus-5-5`.
     public let aliases: [String: String]
+    /// The model the agent uses when none is chosen, when the agent says.
+    public let defaultModelID: String?
 
-    public init(models: [Model], aliases: [String: String]) {
+    public init(models: [Model], aliases: [String: String], defaultModelID: String? = nil) {
         self.models = models
         self.aliases = aliases
+        self.defaultModelID = defaultModelID
     }
 
     /// The model a name refers to: an alias, a full ID, or `nil` when the catalog doesn't know it.

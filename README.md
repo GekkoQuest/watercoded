@@ -5,7 +5,7 @@
 
 **A native macOS home for your coding agents, where the interface behaves like water and the water carries information.**
 
-Run the coding agents you already use (Claude Code today, with more providers to come) in parallel, each in its own git worktree. Each session's message box fills with water as the agent works, and a small glass next to the session in the sidebar shows the same thing at a glance:
+Run the coding agents you already use (Claude Code and Codex today, with more providers to come) in parallel, each in its own git worktree. Each session's message box fills with water as the agent works, and a small glass next to the session in the sidebar shows the same thing at a glance:
 
 | Water | Meaning |
 |---|---|
@@ -23,7 +23,7 @@ Run the coding agents you already use (Claude Code today, with more providers to
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.1). There's no prebuilt download yet: you build it from source, which takes a few minutes
+> **Status:** early (v0.2). There's no prebuilt download yet: you build it from source, which takes a few minutes
 > once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
@@ -72,7 +72,8 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 
 - **Find anything:** search every session (⇧⌘F); export any session as Markdown; re-run it on another model.
 - **Bring your history:** import sessions you ran with the Claude Code CLI in a repository.
-- **Leave anytime:** Continue in Terminal resumes the session with `claude --resume` in its folder.
+- **Leave anytime:** Continue in Terminal resumes the session in its folder with the agent's own CLI
+  (`claude --resume` or `codex resume`).
 - **Storage:** Settings ▸ Storage lists worktrees by size and removes unused ones (branches are kept).
 - **Replay scripts:** save any finished session as a replayable demo or test fixture.
 
@@ -84,10 +85,14 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 
 Optional:
 
-- **For real agents:** the [Claude Code CLI](https://code.claude.com/docs/en/setup), installed and signed in.
-  Tested with Claude Code **2.1.319**. Watercoded relies on parts of the CLI that aren't documented, so other
-  versions may behave differently; `make doctor` and Settings ▸ Agents warn when yours differs.
-  The built-in demo needs nothing and spends no tokens.
+- **For real agents**, one or both of:
+  - the [Codex CLI](https://developers.openai.com/codex/cli), signed in with `codex login` (ChatGPT or an API key).
+    Tested with Codex **0.167.0**. Watercoded uses Codex's app server, which OpenAI marks experimental.
+  - the [Claude Code CLI](https://code.claude.com/docs/en/setup), installed and signed in.
+    Tested with Claude Code **2.1.319**. Watercoded relies on parts of the CLI that aren't documented.
+
+  Other versions may behave differently; `make doctor` and Settings ▸ Agents warn when yours differs.
+  The built-in demo needs neither and spends no tokens.
 - **Apple Intelligence:** names sessions, summarizes progress and drafts commit messages. Without it, sessions
   are named from your first message, there are no progress summaries, and the commit message starts as the
   session's title.
@@ -164,7 +169,8 @@ rm -rf ~/.watercoded ~/Library/Application\ Support/Watercoded
 Watercoded runs the agent CLI you signed in to, so usage counts against *your* plan:
 
 - **Claude subscription (Pro/Max):** the usage popover shows your plan's 5-hour and weekly limits. Nothing is billed per token.
-- **API key:** the popover shows the cost the CLI reports.
+- **ChatGPT plan (Codex):** the usage popover shows your plan's limits as Codex reports them.
+- **API key:** the popover shows the cost the CLI reports (Claude Code).
 
 The line above the message box shows each turn's output tokens and speed, plus the session's total.
 
@@ -176,6 +182,7 @@ The line above the message box shows each turn's output tokens and speed, plus t
 | `cannot execute tool 'metal' due to missing Metal Toolchain` | `xcodebuild -downloadComponent MetalToolchain` |
 | Claude Code shows "Not installed" | Install the CLI, then click **Check Again** (Settings ▸ Agents). Watercoded re-reads your shell's `PATH`, so no relaunch is needed. |
 | Claude Code is installed but the agent fails immediately | Run `claude` once in Terminal and sign in. |
+| Codex shows "Unavailable" | Run `codex login` in Terminal, then click **Check Again** (Settings ▸ Agents). |
 | Land says Git doesn't know who you are | `git config --global user.name "Your Name"` and `git config --global user.email you@example.com` |
 | Land couldn't open the pull request automatically | Install and sign in to the GitHub CLI (`brew install gh && gh auth login`); until then the branch is pushed and the PR page opens in your browser. |
 | "isn't a git repository" when adding a folder | Choose **Initialize Repository**, or pick the repository's root folder. |
@@ -192,7 +199,7 @@ App (composition root)
  └─ WatercodedUI ─┬─ WatercodedDesign ── Meniscus (water engine: physics + Metal)
                   └─ Orchestrator ─┬─ AgentKit ── ProcessKit ── WatercodedCore
                                    └─ GitKit ──── ProcessKit
-Providers (plug-ins): ClaudeCodeProvider · ReplayProvider · …
+Providers (plug-ins): ClaudeCodeProvider · CodexProvider · ReplayProvider · …
 OnDeviceIntelligence: titles, summaries and commit messages with Apple's on-device model
 ```
 

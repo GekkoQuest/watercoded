@@ -10,7 +10,7 @@ import PackageDescription
 //                 └─► WatercodedCore
 //
 //   Providers (one module each, depend only on AgentKit + WatercodedCore):
-//     ClaudeCodeProvider, ReplayProvider
+//     ClaudeCodeProvider, CodexProvider, ReplayProvider
 //
 //   Services plugged into the Orchestrator through protocols:
 //     OnDeviceIntelligence (titles and summaries with Apple's on-device model)
@@ -38,6 +38,7 @@ let package = Package(
         .library(name: "WatercodedDesign", targets: ["WatercodedDesign"]),
         .library(name: "WatercodedUI", targets: ["WatercodedUI"]),
         .library(name: "ClaudeCodeProvider", targets: ["ClaudeCodeProvider"]),
+        .library(name: "CodexProvider", targets: ["CodexProvider"]),
         .library(name: "ReplayProvider", targets: ["ReplayProvider"]),
         .library(name: "OnDeviceIntelligence", targets: ["OnDeviceIntelligence"]),
         .executable(name: "watercoded-relay", targets: ["watercoded-relay"])
@@ -60,6 +61,11 @@ let package = Package(
 
         .target(
             name: "ClaudeCodeProvider",
+            dependencies: ["WatercodedCore", "AgentKit", "ProcessKit"],
+            swiftSettings: strictness
+        ),
+        .target(
+            name: "CodexProvider",
             dependencies: ["WatercodedCore", "AgentKit", "ProcessKit"],
             swiftSettings: strictness
         ),
@@ -95,6 +101,11 @@ let package = Package(
         .testTarget(
             name: "ClaudeCodeProviderTests",
             dependencies: ["ClaudeCodeProvider", "AgentKit", "WatercodedCore", "ProcessKit", "watercoded-relay"],
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "CodexProviderTests",
+            dependencies: ["CodexProvider", "AgentKit", "WatercodedCore"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

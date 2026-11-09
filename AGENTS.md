@@ -22,6 +22,6 @@ Several commits pushed together get one bump: include it in the last commit, or 
 
 - User-facing text uses plain words (session, repository, archive, worktree), never the internal code names
   (`Current`, `Pool`, `settle`, `Channel`). See CONTRIBUTING.
-- Watercoded relies on undocumented Claude Code CLI behaviour. Record anything new it depends on in
-  `docs/adr/0008-claude-cli-features.md`, and keep the tested CLI version in sync across that ADR,
-  `ClaudeCodeProvider`'s `testedVersion`, `scripts/doctor.sh` and the README.
+- Watercoded relies on undocumented Claude Code CLI behaviour and Codex's experimental app server. Record anything
+  new it depends on in `docs/adr/0008-claude-cli-features.md` or `docs/adr/0011-codex-provider.md`, and keep each
+  tested CLI version in sync across its ADR, the provider's `testedVersion`, `scripts/doctor.sh` and the README.

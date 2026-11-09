@@ -1,5 +1,6 @@
 import AgentKit
 import ClaudeCodeProvider
+import CodexProvider
 import Foundation
 import Meniscus
 import OnDeviceIntelligence
@@ -23,6 +24,7 @@ struct AppEnvironment {
         let registry = ProviderRegistry([
             // Background sessions run under this same binary in `--relay` mode.
             ClaudeCodeProvider(relay: Bundle.main.executableURL.map { RelayCommand(executable: $0) }),
+            CodexProvider(),
             ReplayProvider()
         ])
         let workspace = Workspace(registry: registry, repository: FileWorkspaceRepository())

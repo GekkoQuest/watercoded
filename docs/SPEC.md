@@ -11,7 +11,7 @@ describes where it's going, not what ships today. See [What's built today](#what
 
 | Area | Built (v0.1) | Planned |
 |---|---|---|
-| Providers | Claude Code (your own CLI), Replay (demo) | Codex, ACP agents (Cursor, Gemini…), OpenCode, Agent SDK for API keys |
+| Providers | Claude Code and Codex (your own CLIs), Replay (demo) | ACP agents (Cursor, Gemini…), OpenCode, Agent SDK for API keys |
 | Sessions | Sessions in worktrees or your checkout, worktree setup (copied files, setup script), background sessions that outlive the app, importing CLI sessions, Continue in Terminal | Daemon with event store, remote Reservoirs, containers |
 | Conversation | Streaming, approvals, plan mode, questions, task progress, token stats, images, `@` files, `/` commands | Quick Composer, queue and steer |
 | Review | Changes inspector per session or turn, revert files and hunks, review comments, Verify (the repository's own check) | Terminal, file tree, quick editor, browser preview |
