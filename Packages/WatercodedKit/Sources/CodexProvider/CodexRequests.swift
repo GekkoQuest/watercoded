@@ -7,7 +7,8 @@ enum CodexRequests {
     static func initialize() -> JSONValue {
         [
             "clientInfo": ["name": "watercoded", "title": "Watercoded", "version": "1"],
-            "capabilities": ["experimentalApi": false, "requestAttestation": false]
+            // Plan mode (`collaborationMode`) is part of the experimental API.
+            "capabilities": ["experimentalApi": true, "requestAttestation": false]
         ]
     }
 
@@ -16,9 +17,11 @@ enum CodexRequests {
     /// - Ask: asks before edits (read-only sandbox) and before commands it doesn't know are safe.
     /// - Accept Edits: edits the workspace freely; commands run sandboxed to it and ask to go further.
     /// - Full Access: no sandbox, never asks.
+    /// - Plan: read-only, so exploring never needs approval and nothing can change.
     static func policy(for mode: PermissionMode) -> (approval: String, sandbox: String) {
         switch mode {
-        case .ask, .plan: ("untrusted", "read-only")
+        case .plan: ("on-request", "read-only")
+        case .ask: ("untrusted", "read-only")
         case .acceptEdits: ("on-request", "workspace-write")
         case .fullAccess: ("never", "danger-full-access")
         }
@@ -88,6 +91,28 @@ enum CodexRequests {
             items.append(["type": "localImage", "path": .string(url.path)])
         }
         return .array(items)
+    }
+
+    /// Codex's collaboration mode for a turn: `plan` to plan without changing anything, else `default`.
+    static func collaborationMode(planning: Bool, model: String, effort: String?) -> JSONValue {
+        [
+            "mode": planning ? "plan" : "default",
+            "settings": [
+                "model": .string(model),
+                "reasoning_effort": effort.map(JSONValue.string) ?? .null,
+                "developer_instructions": .null
+            ]
+        ]
+    }
+
+    /// Answers to `request_user_input`: Codex's question id → the chosen label.
+    static func userInputResponse(_ answers: [String: String], ids: [String: String]) -> JSONValue {
+        var result: [String: JSONValue] = [:]
+        for (question, answer) in answers {
+            guard let id = ids[question] else { continue }
+            result[id] = ["answers": [.string(answer)]]
+        }
+        return ["answers": .object(result)]
     }
 
     static func approvalResponse(_ decision: PermissionDecision) -> JSONValue {

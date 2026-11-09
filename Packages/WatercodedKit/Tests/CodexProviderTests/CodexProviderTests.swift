@@ -120,6 +120,72 @@ struct CodexWireTranslationTests {
             .last == .turnFinished(.interrupted))
     }
 
+    @Test func `a plan-mode turn ends by proposing its plan`() throws {
+        let events = try translate(fixture: "plan-turn")
+        let proposal = events.compactMap {
+            if case let .planProposed(id, markdown) = $0 {
+                (id, markdown)
+            } else {
+                nil
+            }
+        }.first
+        #expect(proposal?.1.contains("README.md") == true)
+        // The proposal comes before the turn ends, so the session waits on the plan card.
+        let planIndex = events.firstIndex {
+            if case .planProposed = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        let endIndex = events.lastIndex {
+            if case .turnFinished = $0 {
+                true
+            } else {
+                false
+            }
+        }
+        #expect(try planIndex != nil && endIndex != nil && #require(planIndex) < #require(endIndex))
+    }
+
+    @Test func `questions map to cards and answers go back by id`() {
+        var translator = CodexWireTranslator()
+        let events = translator.translate([
+            "id": 9, "method": "item/tool/requestUserInput",
+            "params": ["threadId": "t", "turnId": "u", "itemId": "i", "isBlocking": true, "questions": [
+                [
+                    "id": "q1",
+                    "header": "Scope",
+                    "question": "Which part?",
+                    "isOther": true,
+                    "isSecret": false,
+                    "options": [
+                        ["label": "UI", "description": "Just the views"],
+                        ["label": "All", "description": "Everything"]
+                    ]
+                ]
+            ]]
+        ])
+        guard case let .questionAsked(requestID, questions)? = events.first else {
+            Issue.record("No question")
+            return
+        }
+        #expect(questions.first?.header == "Scope")
+        #expect(questions.first?.options.map(\.label) == ["UI", "All"])
+        #expect(questions.first?.options.first?.detail == "Just the views")
+        let pending = translator.consumeQuestion(requestID)
+        #expect(pending?.rpcID == 9)
+        #expect(CodexRequests.userInputResponse(["Which part?": "UI"], ids: pending?.ids ?? [:])
+            == ["answers": ["q1": ["answers": ["UI"]]]])
+    }
+
+    @Test func `plan mode is read-only and switches collaboration mode`() {
+        #expect(CodexRequests.policy(for: .plan) == ("on-request", "read-only"))
+        #expect(CodexRequests.collaborationMode(planning: true, model: "m", effort: nil)["mode"] == "plan")
+        #expect(CodexRequests
+            .collaborationMode(planning: false, model: "m", effort: "low")["settings"]?["model"] == "m")
+    }
+
     @Test func `plans become the task list`() {
         let tasks = CodexWireTranslator.tasks(from: [
             ["step": "Read the code", "status": "completed"],
@@ -134,6 +200,10 @@ struct CodexWireTranslationTests {
         #expect(CodexWireTranslator.unwrapShell("/bin/zsh -lc 'git status'") == "git status")
         #expect(CodexWireTranslator.unwrapShell("/bin/zsh -lc 'echo '\\''hi'\\'''") == "echo 'hi'")
         #expect(CodexWireTranslator.unwrapShell("ls -la") == "ls -la")
+        // Codex's own quoting of a nested single quote, seen live.
+        #expect(CodexWireTranslator.unwrapShell(#"/bin/zsh -lc 'tr -d '"'"' '"'"''"#) == "tr -d ' '")
+        #expect(CodexWireTranslator.unwrapShell(#"/bin/zsh -lc "echo \"hi\"""#) == #"echo "hi""#)
+        #expect(CodexWireTranslator.unwrapShell("/bin/zsh -lc 'a' extra") == "/bin/zsh -lc 'a' extra")
         #expect(CodexWireTranslator.windowTitle(minutes: 10080) == "Weekly limit")
         #expect(CodexWireTranslator.windowTitle(minutes: 300) == "5-hour limit")
     }

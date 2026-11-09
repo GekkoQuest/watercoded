@@ -17,6 +17,8 @@ struct CodexWireTranslator {
     }
 
     private(set) var threadID: String?
+    /// The thread's model, needed to switch between plan and default collaboration modes.
+    private(set) var model: String?
     private(set) var currentTurnID: String?
     private(set) var isTurnActive = false
     private var failure: String?
@@ -27,6 +29,11 @@ struct CodexWireTranslator {
     private var pendingApprovals: [String: PendingApproval] = [:]
     /// File paths of in-progress file changes, so their approvals can say what they touch.
     private var fileChangePaths: [String: [String]] = [:]
+    /// The plan a plan-mode turn produced, proposed when the turn ends.
+    private var proposedPlan: String?
+    private var pendingPlanID: String?
+    /// Questions Codex is waiting on: the JSON-RPC request, and question text → Codex's question id.
+    private var pendingQuestions: [String: (rpcID: JSONValue, ids: [String: String])] = [:]
 
     // MARK: Driven by the session
 
@@ -56,6 +63,7 @@ struct CodexWireTranslator {
         guard let thread = result["thread"], let id = thread["id"]?.string else { return [] }
         threadID = id
         let model = result["model"]?.string ?? thread["model"]?.string
+        self.model = model
         let instructions = result["instructionSources"]?.array?.compactMap(\.string) ?? []
         return [
             .sessionStarted(SessionInfo(providerSessionID: id, model: model)),
@@ -71,9 +79,27 @@ struct CodexWireTranslator {
         pendingApprovals.removeValue(forKey: requestID)
     }
 
+    /// Whether `requestID` is the plan proposed at the end of the last plan-mode turn.
+    mutating func consumePlan(_ requestID: String) -> Bool {
+        guard pendingPlanID == requestID else { return false }
+        pendingPlanID = nil
+        return true
+    }
+
+    mutating func consumeQuestion(_ requestID: String) -> (rpcID: JSONValue, ids: [String: String])? {
+        pendingQuestions.removeValue(forKey: requestID)
+    }
+
+    mutating func modelChanged(to model: String?) {
+        if let model {
+            self.model = model
+        }
+    }
+
     /// Server requests Watercoded answers through the UI. Anything else gets an error reply.
     static func handlesServerRequest(_ method: String) -> Bool {
-        method == "item/commandExecution/requestApproval" || method == "item/fileChange/requestApproval"
+        ["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/tool/requestUserInput"]
+            .contains(method)
     }
 
     // MARK: Incoming messages
@@ -165,6 +191,9 @@ struct CodexWireTranslator {
         switch item["type"]?.string {
         case "agentMessage":
             return [.messageCompleted(messageID: id, text: item["text"]?.string ?? "")]
+        case "plan":
+            proposedPlan = item["text"]?.string
+            return []
         case "reasoning":
             let parts = (item["summary"]?.array ?? []) + (item["content"]?.array ?? [])
             let text = parts.compactMap(\.string).joined(separator: "\n\n")
@@ -223,9 +252,30 @@ struct CodexWireTranslator {
                 input: ["file_path": .string(paths.first ?? ""), "paths": .array(paths.map { .string($0) })],
                 subject: paths.first
             ))]
+        case "item/tool/requestUserInput":
+            return questions(params, rpcID: rpcID, requestID: requestID)
         default:
             return []
         }
+    }
+
+    /// Codex's `request_user_input` tool (mainly in plan mode): headed questions with labelled options.
+    private mutating func questions(_ params: JSONValue, rpcID: JSONValue, requestID: String) -> [AgentEvent] {
+        var ids: [String: String] = [:]
+        let questions = (params["questions"]?.array ?? []).compactMap { question -> QuestionRecord.Question? in
+            guard let text = question["question"]?.string, let id = question["id"]?.string else { return nil }
+            ids[text] = id
+            let options = (question["options"]?.array ?? []).compactMap { option -> QuestionRecord.Question.Option? in
+                option["label"]?.string.map { QuestionRecord.Question.Option(
+                    label: $0,
+                    detail: option["description"]?.string
+                ) }
+            }
+            return QuestionRecord.Question(text: text, header: question["header"]?.string, options: options)
+        }
+        guard !questions.isEmpty else { return [] }
+        pendingQuestions[requestID] = (rpcID, ids)
+        return [.questionAsked(requestID: requestID, questions: questions)]
     }
 
     // MARK: Usage and turn lifecycle
@@ -283,6 +333,14 @@ struct CodexWireTranslator {
         if let currentTurnID {
             events.append(.checkpoint(currentTurnID)) // `thread/fork` can fork through this turn
         }
+        if outcome == .completed, let plan = proposedPlan?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !plan.isEmpty {
+            // Like Codex's own "Implement this plan?": Build starts coding, feedback keeps planning.
+            let id = "codex-plan-\(currentTurnID ?? UUID().uuidString)"
+            pendingPlanID = id
+            events.append(.planProposed(requestID: id, markdown: plan))
+        }
+        proposedPlan = nil
         events += [.usageUpdated(usage), .turnFinished(outcome)]
         failure = nil
         interruptRequested = false
@@ -291,17 +349,50 @@ struct CodexWireTranslator {
 
     // MARK: Helpers
 
-    /// `/bin/zsh -lc 'npm test'` → `npm test`.
+    /// `/bin/zsh -lc 'npm test'` → `npm test`. Codex wraps commands in a login shell; the wrapped
+    /// script is one shell word, so it's unquoted with POSIX rules. Anything else is shown as is.
     static func unwrapShell(_ command: String) -> String {
         for prefix in ["/bin/zsh -lc ", "/bin/bash -lc ", "bash -lc ", "zsh -lc ", "/bin/sh -c ", "sh -c "]
             where command.hasPrefix(prefix) {
-            var inner = String(command.dropFirst(prefix.count))
-            if inner.count >= 2, inner.hasPrefix("'"), inner.hasSuffix("'") {
-                inner = String(inner.dropFirst().dropLast()).replacingOccurrences(of: "'\\''", with: "'")
-            }
-            return inner
+            return shellWord(String(command.dropFirst(prefix.count))) ?? command
         }
         return command
+    }
+
+    /// The value of a single shell word (`'a'"b"\c` → `abc`), or `nil` if it isn't exactly one word.
+    static func shellWord(_ text: String) -> String? {
+        var result = ""
+        var characters = text[...]
+        while let character = characters.popFirst() {
+            switch character {
+            case "'":
+                guard let end = characters.firstIndex(of: "'") else { return nil }
+                result += characters[..<end]
+                characters = characters[characters.index(after: end)...]
+            case "\"":
+                var closed = false
+                while let inner = characters.popFirst() {
+                    if inner == "\"" {
+                        closed = true
+                        break
+                    }
+                    if inner == "\\", let next = characters.first, "\"\\$`".contains(next) {
+                        result.append(characters.removeFirst())
+                    } else {
+                        result.append(inner)
+                    }
+                }
+                guard closed else { return nil }
+            case "\\":
+                guard let next = characters.popFirst() else { return nil }
+                result.append(next)
+            case " ", "\t", "\n":
+                return nil // more than one word
+            default:
+                result.append(character)
+            }
+        }
+        return result
     }
 
     static func tasks(from plan: JSONValue?) -> [TaskItem] {

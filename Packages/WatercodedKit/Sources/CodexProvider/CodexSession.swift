@@ -18,6 +18,8 @@ actor CodexSession: AgentSession {
     private var pendingOverrides: [String: JSONValue] = [:]
     private var configuration: SessionConfiguration
     private let imageDirectory: URL
+    /// Whether turns run in Codex's plan mode. Starts from the permission mode; Build turns it off.
+    private var planning: Bool
 
     static func launch(_ spec: ProcessSpec, configuration: SessionConfiguration) async throws -> CodexSession {
         let process = try LineStreamingProcess(
@@ -39,6 +41,7 @@ actor CodexSession: AgentSession {
     private init(channel: any LineChannel, configuration: SessionConfiguration) {
         self.channel = channel
         self.configuration = configuration
+        planning = configuration.permissionMode == .plan
         imageDirectory = FileManager.default.temporaryDirectory.appending(path: "watercoded-codex-images")
         (events, continuation) = AsyncStream.makeStream(of: AgentEvent.self, bufferingPolicy: .unbounded)
     }
@@ -79,6 +82,10 @@ actor CodexSession: AgentSession {
             ])
             return
         }
+        try await startTurn(threadID: threadID, input: input)
+    }
+
+    private func startTurn(threadID: String, input: JSONValue) async throws {
         for event in translator.turnRequested() {
             continuation.yield(event)
         }
@@ -86,14 +93,42 @@ actor CodexSession: AgentSession {
         if let effort = configuration.effort {
             parameters["effort"] = .string(effort)
         }
+        if let model = translator.model {
+            parameters["collaborationMode"] = CodexRequests.collaborationMode(
+                planning: planning, model: model, effort: configuration.effort
+            )
+        }
         parameters.merge(pendingOverrides) { _, new in new }
         pendingOverrides.removeAll()
         _ = try await request("turn/start", .object(parameters))
     }
 
     func respond(to requestID: PermissionRequest.ID, with decision: PermissionDecision) async throws {
-        guard !ended, let approval = translator.consumeApproval(requestID) else { return }
+        guard !ended else { return }
+        if translator.consumePlan(requestID), let threadID = translator.threadID {
+            switch decision {
+            case .allow:
+                // Build: leave plan mode with Ask's permissions, as Codex's own "Implement this plan" does.
+                planning = false
+                let mode: PermissionMode = configuration.permissionMode == .plan ? .ask : configuration.permissionMode
+                try await setPermissionMode(mode)
+                try await startTurn(threadID: threadID, input: Self.text("Implement the plan."))
+            case let .deny(reason):
+                try await startTurn(threadID: threadID, input: Self.text(reason))
+            }
+            return
+        }
+        guard let approval = translator.consumeApproval(requestID) else { return }
         try reply(to: approval.rpcID, result: CodexRequests.approvalResponse(decision))
+    }
+
+    func answer(_ requestID: String, with answers: [String: String]) async throws {
+        guard !ended, let question = translator.consumeQuestion(requestID) else { return }
+        try reply(to: question.rpcID, result: CodexRequests.userInputResponse(answers, ids: question.ids))
+    }
+
+    private static func text(_ text: String) -> JSONValue {
+        [["type": "text", "text": .string(text), "text_elements": []]]
     }
 
     func interrupt() async throws {
@@ -105,6 +140,7 @@ actor CodexSession: AgentSession {
 
     func setPermissionMode(_ mode: PermissionMode) async throws {
         configuration.permissionMode = mode
+        planning = mode == .plan
         pendingOverrides["approvalPolicy"] = .string(CodexRequests.policy(for: mode).approval)
         pendingOverrides["sandboxPolicy"] = CodexRequests.sandboxPolicy(
             for: mode,
@@ -114,6 +150,7 @@ actor CodexSession: AgentSession {
 
     func setModel(_ model: String?) async throws {
         configuration.model = model
+        translator.modelChanged(to: model == "default" ? nil : model)
         pendingOverrides["model"] = model.flatMap { $0 == "default" ? nil : .string($0) } ?? .null
     }
 
@@ -161,6 +198,15 @@ actor CodexSession: AgentSession {
             } else {
                 waiting.resume(returning: message["result"] ?? .null)
             }
+            return
+        }
+        if message["method"]?.string == "mcpServer/elicitation/request", let id = message["id"] {
+            // MCP servers asking for form input: decline, so the tool call fails cleanly.
+            try? reply(to: id, result: ["action": "decline", "content": .null, "_meta": .null])
+            continuation.yield(.notice(Notice(
+                .info,
+                "An MCP server asked for input Watercoded can't show yet, so it was declined."
+            )))
             return
         }
         if let method = message["method"]?.string, let id = message["id"],

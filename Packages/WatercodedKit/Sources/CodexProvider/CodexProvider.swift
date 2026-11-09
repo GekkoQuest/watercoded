@@ -26,7 +26,7 @@ public struct CodexProvider: AgentProvider {
             tintHue: 0.45,
             capabilities: [
                 .streamingText, .toolApprovals, .interrupt, .resume, .queueing, .liveSettings,
-                .customModels, .images, .branching
+                .customModels, .images, .branching, .planMode, .questions
             ],
             models: [AgentModel(id: "default", displayName: "Default", isDefault: true)],
             installHint: "Install the Codex CLI, then run `codex login` once in Terminal to sign in.",
