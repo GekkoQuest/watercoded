@@ -18,5 +18,5 @@ The refs keep the objects from being garbage-collected. Deleting a Current delet
 
 ## Consequences
 - Per-turn diffs are plain `git diff before after`, and restoring a turn later is `git read-tree`/`checkout`.
-- Snapshot commits never appear in `git log` of any branch. They're visible only with `git for-each-ref refs/watercoded`.
+- Snapshot commits never appear in `git log` of any branch. List their refs with `git for-each-ref refs/watercoded`; history commands such as `git log --all` can show them too.
 - Large untracked files that aren't ignored are captured too. That's the same trade-off `git stash -u` makes.

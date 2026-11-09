@@ -54,7 +54,7 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 
 ## Consequences
 - The app server is experimental and may change. The tested version lives in `CodexProvider`'s `testedVersion`,
-  `scripts/doctor.sh` and the README; `WATERCODED_LIVE_CODEX=1 swift test --filter CodexLive` re-verifies it.
+  `scripts/doctor.sh` and the README; `WATERCODED_LIVE_CODEX=1 swift test --package-path Packages/WatercodedKit --filter CodexLive` re-verifies it.
 - Re-generate the protocol with `codex app-server generate-ts --experimental --out <dir>` when upgrading. The source
   is at https://github.com/openai/codex (the app server lives in `codex-rs/app-server-protocol`).
 - Plan mode depends on the experimental API, the part most likely to change.

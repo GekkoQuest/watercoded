@@ -6,8 +6,8 @@ notarized. Sparkle 2 verifies both the update feed and downloaded archives using
 
 ## Install
 
-Download `Watercoded-<version>.zip` from the latest GitHub release, extract it and move Watercoded.app
-to `/Applications`. Launch the installed copy, rather than an Xcode build.
+Download `Watercoded-<version>.zip` from the [latest GitHub release](https://github.com/GekkoQuest/watercoded/releases/latest), extract it and move Watercoded.app
+to `/Applications` (or `~/Applications`). Launch the installed copy, rather than an Xcode build.
 For an unnotarized download, macOS may require an initial launch attempt followed by
 System Settings > Privacy & Security > Open Anyway. Only approve downloads from the trusted repository.
 Do not disable Gatekeeper globally.
@@ -23,7 +23,11 @@ The install command does not launch or quit the app. It refuses to replace an in
 app or helpers are running, and preserves any previous installation in a hidden `.watercoded-backups.noindex` folder for recovery.
 Sessions remain in `~/Library/Application Support/Watercoded/`; replacing the app does not remove them.
 Xcode and build tools are required to build from source, not to launch the prebuilt app.
-User-installed agent CLIs and git are still needed for their respective features.
+User-installed agent CLIs and git are still needed for their respective features. The demo needs git,
+but no agent CLI. `git --version` can prompt to install Apple's Command Line Tools if git is missing.
+
+Debug and Release have separate preferences, but share session data, worktrees, replay files and delegation
+mailboxes. Run one app at a time; a separate bundle identifier does not isolate those files.
 
 ## Updates
 
@@ -87,8 +91,8 @@ make format
 make lint
 make test
 # Commit the changes and push main, then tag that commit:
-git tag v<version>
-git push origin v<version>
+git tag v0.8.5              # example: use the version in Configs/Base.xcconfig
+git push origin v0.8.5
 ```
 
 The Release workflow checks the tag/version and main ancestry, runs lint/tests, builds Release,
@@ -100,6 +104,17 @@ would require a different authenticated download setup.
 
 A failed workflow can be retried via workflow_dispatch with its existing tag, provided the release was
 not already published. Published versions are immutable: make a new version for corrections.
+To check a package locally before publication:
+
+```bash
+make build CONFIG=Release
+scripts/package-release.sh
+```
+
+The script verifies the app's code signature, creates the ZIP, and signs the archive and feed. It refuses
+to overwrite an existing output directory; move that directory aside before retrying. These checks do
+not exercise Gatekeeper on a downloaded app or a live update/reconnect cycle.
+
 Manual packaging of an already built Release app is available with `scripts/package-release.sh`;
 it signs using the local Keychain and writes to `.build/release/v<version>/` without publishing anything.
 

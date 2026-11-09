@@ -27,7 +27,8 @@ It's on by default ("Keep agents working after Watercoded quits"). Providers opt
 
 ## Consequences
 - No installation, no launchd plist, and no shared daemon state: one relay per session, gone when the session ends.
-- Logs live in `~/.watercoded/sessions/<current-id>/` and are deleted when the session ends.
+- Logs live under `~/.watercoded/sessions/<current-id>/` and are removed when the app stops the session
+  or handles its exit. If a relay exits while the app is closed, its log remains for reconnection/cleanup.
 - The orchestrator still runs in-process. A full daemon (remote clients, scheduled Springs) can later adopt the same
   relays unchanged.
 - Verified end to end against claude 2.1.319 by `ClaudeCodeLiveTests` (detach while an approval is pending, reattach,

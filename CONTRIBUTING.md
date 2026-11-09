@@ -4,13 +4,24 @@ Thanks for helping! This guide covers setup, conventions and how changes land.
 
 ## Setup
 
+To use Watercoded, install the app from [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases/latest);
+see the [README](README.md#getting-started). The steps below are for development.
+
+Building requires macOS 26+, Xcode 26+ (Swift 6.2+), and Homebrew. Open Xcode once to accept its license
+and install components. `xcode-select -p` should point inside Xcode; if needed, run
+`sudo xcode-select -s /Applications/Xcode.app`. From the cloned repository:
+
 ```bash
 make bootstrap   # Homebrew tools + Metal Toolchain + generate Watercoded.xcodeproj
 make run
 make test
 ```
 
-Use the **Replay (Demo)** provider to work on the UI without spending tokens.
+`make bootstrap` runs `make doctor` after installing tools; missing agent CLIs are optional warnings.
+Use **Try the Demo** or the **Replay (Demo)** provider to work on the UI without spending tokens.
+`make run` launches **Watercoded Development**, which has its own bundle identifier and preferences and
+no updater. It shares `~/Library/Application Support/Watercoded/` and `~/.watercoded/` with Release;
+run one app at a time. `make install` builds Release and installs it into Applications.
 
 ## Project layout
 
@@ -45,13 +56,13 @@ project.yml               XcodeGen spec
 - SwiftFormat decides style. If SwiftLint and SwiftFormat disagree, change the SwiftLint config.
 
 **Tests**
-- `make test` runs every module's tests in about 20 seconds. Each module prints its own
+- `make test` runs every module's tests (duration depends on the Mac and build cache). Each module prints its own
   "Test run with N tests … passed" line, so the last line only counts the last module, not the total.
   Look for any `✘` or a non-zero exit instead. You'll also see "Executed 0 tests" from XCTest; that's expected.
 - Run one module's tests with `swift test --package-path Packages/WatercodedKit --filter GitKitTests`.
-- Live tests run the real `claude` CLI and **spend your usage**. They're skipped unless you opt in:
+- Live tests run real agent CLIs and **spend your usage**. They're skipped unless you opt in:
   `WATERCODED_LIVE_CLAUDE=1 make test` (Claude Code) or `WATERCODED_LIVE_CODEX=1 make test` (Codex).
-  The MCP live tests start `Tests/Support/elicitation-mcp-server.py` with the system `python3`.
+  The MCP live tests start `Packages/WatercodedKit/Tests/Support/elicitation-mcp-server.py` with the system `python3`.
   `WATERCODED_LIVE_DELEGATION=1` runs agents delegating to each other through the built app (`make build` first).
 - Swift Testing (`import Testing`, `@Test`, `#expect`), one test target per module.
 - Provider translators are tested against recorded fixtures. Re-record them when a CLI changes its format, and redact paths and secrets.
@@ -75,6 +86,6 @@ then publishes a Sparkle-signed update archive and feed. No paid Apple developer
 Developer ID signing and notarization can be added later. See [docs/RELEASING.md](docs/RELEASING.md)
 for installation, signing key setup and release instructions.
 
-The version lives in one place: `MARKETING_VERSION` in `Configs/Base.xcconfig`. Every push to `main` bumps it
+The app version lives in `MARKETING_VERSION` in `Configs/Base.xcconfig`. Every push to `main` bumps it
 (patch for fixes and docs, minor for features), increases `CURRENT_PROJECT_VERSION`, and is tagged
 `v<version>`. The README's status line shows the minor version. See [AGENTS.md](AGENTS.md) for the exact steps.

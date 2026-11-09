@@ -11,15 +11,15 @@ small modules with one-way dependencies. The app target is only a composition ro
 | `ProcessKit` | Subprocesses: login-shell `PATH` resolution (`ShellEnvironment`), run-to-completion (`ProcessRunner`), long-lived JSON Lines (`LineStreamingProcess`), and background relays (`RelayHost`, `RelayedProcess`, both behind `LineChannel`). | Core |
 | `AgentKit` | The provider contract: `AgentProvider`, `AgentSession`, normalized `AgentEvent`, `ProviderCapabilities`, `ProviderRegistry`. | Core, ProcessKit |
 | `GitKit` | `GitClient` (shells out to git; GitHub issues and pull request status via `gh`), `WorktreeManager`, `UnifiedDiff` parser. | Core, ProcessKit |
-| `Orchestrator` | `Workspace` (pools + currents), `CurrentController` (one session's state machine), persistence (`WorkspaceRepository`), and per-feature extensions: worktree setup (`WorktreePreparer`), Verify, branching, pull request watching, storage, model options. | Core, AgentKit, GitKit |
+| `Orchestrator` | `Workspace` (pools + currents), `CurrentController` (one session's state machine), persistence (`WorkspaceRepository`), and per-feature extensions: worktree setup (`WorktreePreparer`), Verify, branching, pull request watching, storage, model options. | Core, ProcessKit, AgentKit, GitKit, Delegation |
 | `Meniscus` | Water engine: 1D wave simulation, particles, shake detection, energy-gated display link, Metal `layerEffect` shader. No app knowledge. | — |
 | `WatercodedDesign` | Tokens (`Spacing`, `Radius`, `Motion`), glass components, `VesselGlyph` / `ComposerVessel`. | Core, Meniscus |
-| `WatercodedUI` | Features: sidebar, Current screen, transcript, composer, approvals, diff inspector, settings, commands, menu bar extra. | everything above |
+| `WatercodedUI` | Features: sidebar, Current screen, transcript, composer, approvals, diff inspector, settings, commands, menu bar extra. | Core, AgentKit, GitKit, Orchestrator, Meniscus, WatercodedDesign |
 | `ClaudeCodeProvider` | Drives the user's `claude` CLI over stream-json and the stdio control protocol. | Core, AgentKit, ProcessKit |
 | `Delegation` | Watercoded's own `delegate` MCP server (run as `Watercoded --delegate-mcp`) and the file mailbox it shares with the app (ADR 0012). | Core |
 | `CodexProvider` | Drives the user's `codex app-server` over JSON-RPC: threads, turns, approvals, fork (ADR 0011). | Core, AgentKit, ProcessKit |
 | `ReplayProvider` | Scripted offline provider for demos, previews and tests. Records Currents as Codable scripts (`TranscriptRecording`). | Core, AgentKit |
-| `OnDeviceIntelligence` | `CurrentSummarizer` backed by Apple's on-device Foundation Models: titles and progress summaries. | Orchestrator |
+| `OnDeviceIntelligence` | `CurrentSummarizer` backed by Apple's on-device Foundation Models: titles, progress summaries and commit-message drafts. | Orchestrator |
 
 Rules:
 
@@ -34,20 +34,31 @@ Rules:
 ## Data flow
 
 ```
-claude (CLI) ──stdout JSONL──► ClaudeCodeSession (actor)
-                                 │ ClaudeWireTranslator (pure)
-                                 ▼
-                            AgentEvent stream
-                                 │
-                                 ▼
-                    CurrentController (@MainActor @Observable)
-              transcript · status · usage · pending approvals · activity
-                 │                         │
-                 ▼                         ▼
-          SwiftUI views             CurrentWaterSync → Vessel (Meniscus)
+claude stream-json / codex app-server (optionally through a relay)
+                 │ provider session actor + wire translator
+                 ▼
+          normalized AgentEvent stream
                  │
-     user actions (send / approve / interrupt) ──► AgentSession ──stdin JSONL──► claude
+                 ▼
+    CurrentController (@MainActor @Observable)
+    transcript · status · usage · approvals · activity
+             │                       │
+             ▼                       ▼
+       SwiftUI views          CurrentWaterSync → Vessel (Meniscus)
+             │
+    send / approve / interrupt → AgentSession → provider protocol
 ```
+
+Claude Code uses stream-json plus its stdio control protocol; Codex uses JSON-RPC requests,
+responses and notifications. The relay transports protocol lines without interpreting provider events.
+
+## Delegation
+
+`Workspace` polls a `DelegationMailbox` for requests from the app binary's `--delegate-mcp` mode.
+Each delegated session gets its own worktree from a snapshot of the parent's files. On its delegated
+turn's completion, its changes are applied back only if the patch fits cleanly. Results return through
+the mailbox. The GUI must be running to process requests; relays alone do not orchestrate delegation.
+See [ADR 0012](adr/0012-delegation-between-agents.md).
 
 ## Adding a provider
 
@@ -56,7 +67,8 @@ claude (CLI) ──stdout JSONL──► ClaudeCodeSession (actor)
 3. Declare honest `ProviderCapabilities`.
 4. Add the target and product in `Package.swift`, add it to `project.yml`, and register it in `AppEnvironment.live()`.
 
-Good next candidates: Codex (`codex app-server`, JSON-RPC over stdio) and an ACP adapter, which covers Gemini CLI, Cursor and other ACP agents with one module.
+Claude Code, Codex and Replay are registered today. An ACP adapter is a possible next provider for
+Gemini CLI, Cursor and other ACP agents.
 
 ## Agent interactions
 
@@ -89,12 +101,16 @@ falling back to the host's compare page. The PR description comes from `Workspac
 `pools.json`, plus `currents/<id>/current.json` and `transcript.json`. Writes are atomic and coalesced (400 ms).
 Worktrees live in `~/.watercoded/worktrees/<pool>/<current>` on branches named `watercoded/<slug>`.
 Turn snapshots are commits under `refs/watercoded/<current-id>/turn-<n>-{before,after}` in the repository.
-Replay scripts are JSON files in `~/.watercoded/replays/`.
+Replay scripts are JSON files in `~/.watercoded/replays/`. Relay logs live in `~/.watercoded/sessions/`
+and delegation messages in `~/.watercoded/delegation/`. Preferences use `UserDefaults`.
+
+Debug and Release have different bundle identifiers and preferences but share these file-backed paths.
+They should not run concurrently against the same workspace.
 
 When an agent isn't running under the relay (the **Keep agents working after Watercoded quits** setting is off,
 the provider lacks `.backgroundSessions`, or the process was stopped), its process ends with the app. Restored
 Currents that were mid-flight become *Ready for Review*, and **Resume** or the next message resumes the provider
-session (`--resume`).
+session (`claude --resume` or `codex resume`).
 
 ## The water engine
 

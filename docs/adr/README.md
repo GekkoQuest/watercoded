@@ -5,7 +5,7 @@ surprising. Copy the format of an existing record and number it sequentially.
 
 | # | Decision | Status |
 |---|---|---|
-| [0001](0001-native-macos-app.md) | Native SwiftUI app for macOS 26+, unsandboxed | Accepted |
+| [0001](0001-native-macos-app.md) | Native SwiftUI app for macOS 26+, unsandboxed | Partly superseded by 0013 |
 | [0002](0002-providers-as-modules.md) | Each AI provider is an isolated module behind `AgentProvider` | Accepted |
 | [0003](0003-cli-adapters-own-credentials.md) | Drive users' own CLIs; never handle credentials | Accepted |
 | [0004](0004-in-process-orchestrator.md) | Orchestrate in-process first; extract a daemon later | Partly superseded by 0009 |
@@ -15,4 +15,6 @@ surprising. Copy the format of an existing record and number it sequentially.
 | [0008](0008-claude-cli-features.md) | Claude CLI features Watercoded enables and how they're verified | Accepted |
 | [0009](0009-background-sessions-via-relays.md) | Background sessions via per-session relays | Accepted |
 | [0010](0010-approval-rules-owned-by-watercoded.md) | Watercoded owns "always allow" rules | Accepted |
+| [0011](0011-codex-provider.md) | Codex through its app server | Accepted |
+| [0012](0012-delegation-between-agents.md) | Agents delegating to other agents, across providers | Accepted |
 | [0013](0013-github-releases-and-sparkle.md) | GitHub releases and Sparkle updates without Developer ID | Accepted |

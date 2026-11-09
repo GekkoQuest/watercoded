@@ -11,5 +11,5 @@ v0.1 stores a handful of pools, currents and their transcripts. Queries are "loa
 
 ## Consequences
 - Zero dependencies and human-readable data.
-- Move to SQLite (an event log plus projections, as described in the spec) when we need search, large transcripts or the daemon.
+- Move to SQLite (an event log plus projections, as described in the spec) when scale or daemon requirements justify it. Current search scans loaded transcripts in memory.
   Migrations key off `schemaVersion`.

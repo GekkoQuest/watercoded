@@ -25,7 +25,7 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 
 > **Status:** early (v0.8). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
-> The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
+> The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
 
@@ -41,7 +41,8 @@ Reduce Motion is respected: the water stays still and only the level changes. He
   and tokens per second.
 - **Live settings:** switch model, effort or permissions mid-session. Models are listed by exact version
   ("Default (Opus 5.5)"), and Auto effort shows the model's default ("Auto (Medium)"). Any custom model name works too.
-- **A real composer:** paste or drop screenshots, `@` to mention files, `/` for the agent's commands.
+- **A real composer:** `@` to mention files, `/` for the agent's commands, and image attachments with providers
+  that enable them (currently Codex).
 - **Agents delegate to agents:** ask one agent to hand part of the work to another, in any direction (Claude Code →
   Codex, Codex → Claude Code, or another model of the same agent): "have GPT-6.1-Sol write the migration". Helpers
   run as their own sessions under the first, each in its own copy of the folder, so several can work at once while
@@ -49,8 +50,9 @@ Reduce Motion is respected: the water stays still and only the level changes. He
   edits made meanwhile) and its answer goes to the agent that asked.
 - **Branch any turn:** right-click a message to branch from it, or edit and resend it, in a new worktree with the
   files and conversation from that point. The original session is untouched.
-- **Agents outlive the app:** quitting doesn't stop them; Watercoded reconnects on launch, including approvals
-  that arrived while it was closed. If an agent was stopped anyway, **Resume** picks it back up.
+- **Agents outlive the app:** Claude Code and Codex keep working under background relays by default; Watercoded
+  reconnects on launch, including approvals that arrived while it was closed. Settings ▸ General can turn this
+  off for agents started afterward. If an agent was stopped, **Resume** picks its conversation back up.
 - **On-device titles and summaries:** Apple Intelligence names sessions and summarizes progress, privately
   and without spending tokens (when Apple Intelligence is available).
 
@@ -88,7 +90,9 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 
 ## Requirements
 
-- macOS 26 or later (Liquid Glass)
+- macOS 26 or later (Liquid Glass), on Apple silicon or a supported Intel Mac
+- **For repositories and the demo:** `git` on your `PATH`. If `git --version` prompts to install Apple
+  Command Line Tools, complete that installation; the full Xcode app is only needed to build Watercoded.
 - **To build from source:** Xcode 26 or later, **opened once** (so it finishes installing components and you accept the license)
 - **To build from source:** [Homebrew](https://brew.sh)
 
@@ -111,11 +115,25 @@ Optional:
 
 ## Getting started
 
-For a prebuilt version, download the ZIP from [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases),
-extract it and move Watercoded.app into Applications. These builds are not notarized: after attempting to open
-one, macOS may require **System Settings > Privacy & Security > Open Anyway**. Release builds check on launch and every 10 minutes, showing an update icon beside Settings when a new version is available;
-hover to see the version and click to review and install. You can also use **Watercoded > Check for Updates…**. Installing an update requires confirmation.
-See [release and installation details](docs/RELEASING.md).
+### Install a release (recommended)
+
+1. Open the [latest release](https://github.com/GekkoQuest/watercoded/releases/latest) and download
+   **Watercoded-<version>.zip** from **Assets** (the source-code archives are for developers).
+2. Extract the ZIP and move **Watercoded.app** to `/Applications` (or `~/Applications`).
+3. Open the installed app. Releases are ad-hoc signed and not notarized. If macOS blocks the first launch,
+   go to **System Settings ▸ Privacy & Security ▸ Open Anyway**, then confirm opening Watercoded.
+4. Click **Try the Demo**, or install and sign in to an agent CLI listed above, then use
+   **Add Repository…** (⇧⌘O) and **New Session…** (⌘N).
+
+You do not need Homebrew or the full Xcode app to run a release. The ZIP includes both Apple silicon and
+Intel executables. Help ▸ What the Water Means (⇧⌘/) explains the water.
+
+Release builds check on launch and every 10 minutes when automatic checks are enabled. An update icon
+beside Settings shows when one is available; hover to see the version and click to review and install.
+**Watercoded ▸ Check for Updates…** checks manually. Installing an update requires confirmation.
+See [installation and update details](docs/RELEASING.md).
+
+### Build from source
 
 To build from source on a brand-new Mac:
 
@@ -126,11 +144,12 @@ xcode-select -p          # should print /Applications/Xcode.app/Contents/Develop
                          # if not: sudo xcode-select -s /Applications/Xcode.app
 make doctor              # checks everything below and tells you how to fix what's missing
 make bootstrap           # installs XcodeGen, SwiftFormat, SwiftLint and the Metal Toolchain; generates the project
-make run                 # builds and launches Watercoded
+make run                 # builds and launches Watercoded Development (Debug)
 ```
 
-In the app, click **Try the Demo** to watch a scripted agent work on a sample project. Or click **Add Repository…** (⇧⌘O),
-pick a git repository, and start a session (⌘N). Help ▸ What the Water Means (⇧⌘/) explains the water.
+Debug builds are called **Watercoded Development** and do not check for app updates. They share session
+data and worktrees with the installed release, so use one app at a time. For an installed Release build,
+run `make install` and open Watercoded from Applications. See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 
 Other tasks (`make help` lists them all):
 
@@ -152,7 +171,10 @@ Outside your repositories:
 | `~/Library/Application Support/Watercoded/` | Your repositories list, sessions and transcripts |
 | `~/.watercoded/worktrees/` | One per session that runs in its own worktree |
 | `~/.watercoded/replays/` | Saved replay scripts |
-| `~/.watercoded/sessions/` | Logs for agents running in the background (deleted when the session ends) |
+| `~/.watercoded/demo/` | Sample git repository created by Try the Demo |
+| `~/.watercoded/sessions/` | Logs for agents running in the background (cleaned up when stopped or their exit is handled by the app) |
+| `~/.watercoded/delegation/` | Requests and results for agents delegating to other agents |
+| `~/Library/Preferences/dev.watercoded.app.plist` | Release app preferences (managed by macOS) |
 
 Inside each repository you add:
 
@@ -160,25 +182,39 @@ Inside each repository you add:
 - snapshot commits under `refs/watercoded/<session-id>/turn-<n>-before` and `-after`, which power per-turn diffs,
   reverts and branching
 
-Watercoded never changes your branches or commits unless you **Land**.
+Creating a worktree creates its branch; snapshots create hidden refs. **Land** commits, merges or pushes
+when you ask it to. Agents can also edit files, commit or push through their own tools according to the
+session's permissions. Sessions in your checkout edit that checkout directly.
 
 Settings ▸ Storage removes worktrees you no longer need; their branches are kept.
 
 ### Removing it
 
-Quit Watercoded and delete the app. Then, in each repository you added:
+Before removing Watercoded, finish or stop its agents and preserve any work you want to keep. Quitting alone
+leaves background agents running. Settings ▸ Storage can remove archived and unused worktrees; removal
+keeps branches and committed work, but deletes uncommitted and ignored files in those folders.
 
-```bash
-git worktree prune
-git for-each-ref --format='%(refname)' refs/watercoded | xargs -n1 git update-ref -d
-git branch --list 'watercoded/*'   # review, then delete the ones you don't need with git branch -D
-```
-
-Finally, remove the app's data:
+Quit the app and delete it from Applications. If you want to delete all session data, transcripts, replays,
+delegation files and remaining worktree folders, remove:
 
 ```bash
 rm -rf ~/.watercoded ~/Library/Application\ Support/Watercoded
 ```
+
+After the worktree folders are gone, run the following **in each repository you added**:
+
+```bash
+git worktree prune
+git for-each-ref --format='%(refname)' refs/watercoded/ | while IFS= read -r ref; do
+    git update-ref -d "$ref"
+done
+git branch --list 'watercoded/*'   # review, then delete unwanted branches with git branch -d
+```
+
+Deleting snapshot refs removes Watercoded's per-turn recovery history. Only use `git branch -D` if you
+intend to discard unmerged commits. To remove preferences too, use `defaults delete dev.watercoded.app`
+(and `defaults delete dev.watercoded.app.debug` if you used development builds). Locally installed builds
+may also leave recovery copies in `.watercoded-backups.noindex` inside the installation folder.
 
 ## Usage and billing
 
@@ -223,7 +259,12 @@ Each AI provider is its own module behind the `AgentProvider` protocol. Adding o
 
 ## Privacy and credentials
 
-Watercoded never sees, stores or brokers your AI credentials. It launches the CLIs you installed and signed in to, so authentication stays with the provider's own tool. Telemetry: none. Release builds contact GitHub to check for app updates and download updates you approve.
+Watercoded does not manage provider logins or credential storage. It launches the CLIs you installed and
+signed in to, so authentication stays with the provider's own tool. Transcripts and background logs are
+stored locally and can contain prompts, tool output and sensitive data returned by tools. Exporting a
+session or opening a pull request can share session content; review it before sharing. Telemetry: none.
+Release builds contact GitHub to check for app updates and download updates you approve. See
+[SECURITY.md](SECURITY.md) for the permission and storage model.
 
 ## License
 

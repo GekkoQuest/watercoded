@@ -2,23 +2,29 @@
 
 > A native macOS home for your coding agents, where the interface behaves like water and the water carries information.
 
-**Status:** Vision and roadmap (spec revision 3, 2026-11-08). The app is at v0.1, and most of this document
-describes where it's going, not what ships today. See [What's built today](#whats-built-today).
+**Status:** Vision and roadmap (spec revision 4, 2026-11-09). The app is at v0.8.
+[What's built today](#whats-built-today) summarizes the current implementation; the
+[README](../README.md) is the user guide. Sections 1–3 preserve the original research and principles;
+sections 4–17 describe the target product, including unbuilt features, unless explicitly marked as current.
+Competitor descriptions are historical research notes, not a maintained comparison. The performance
+budgets are goals, not measured results or CI guarantees.
 **Platform:** macOS 26+ (Liquid Glass), with an iOS 26 companion later
 **One-liner:** Run every coding agent you already pay for (Claude Code, Codex, Cursor, OpenCode, Gemini, and others) in parallel, each in its own worktree, from one Mac app that feels like it was made by Apple.
 
 ## What's built today
 
-| Area | Built (v0.1) | Planned |
+| Area | Built (v0.8) | Planned |
 |---|---|---|
 | Providers | Claude Code and Codex (your own CLIs), Replay (demo) | ACP agents (Cursor, Gemini…), OpenCode, Agent SDK for API keys |
 | Sessions | Sessions in worktrees or your checkout, worktree setup (copied files, setup script), background sessions that outlive the app, importing CLI sessions, Continue in Terminal | Daemon with event store, remote Reservoirs, containers |
-| Conversation | Streaming, approvals, plan mode, questions, task progress, token stats, images, `@` files, `/` commands | Quick Composer, queue and steer |
+| Conversation | Streaming, approvals, plan mode, questions, task progress, token stats, images (Codex), `@` files, `/` commands, follow-ups during a turn | Quick Composer, separate queue/steer controls |
 | Review | Changes inspector per session or turn, revert files and hunks, review comments, Verify (the repository's own check) | Terminal, file tree, quick editor, browser preview |
 | Shipping | Land: commit, merge or open a pull request; one-click conflict fix; start from a GitHub issue; watch the PR's checks and reviews | Stacked PRs, other Git hosts |
 | Undo | Per-turn git snapshots; branch or edit-and-resend from any turn | Full Tide (side effects) |
 | Water | Water in the message box and sidebar, slosh, shake to stop, droplets, murk, frost, heat haze, Reduce Motion | Tilt, sound, Pool overview |
-| Signature | None yet | Delta, Crosscurrents, the Chart, Springs |
+| Delegation | Cross-provider helpers in separate worktrees, clean patch application back to the parent | Broader agent control of the app |
+| Distribution | Universal ad-hoc signed GitHub release ZIPs, Sparkle updates with confirmation | Developer ID signing and notarization |
+| Signature | Per-turn snapshots and branching; inbox of sessions needing attention | Delta, Crosscurrents, the Chart, Springs |
 | Platforms | macOS 26, menu bar extra, notifications | iOS companion, App Intents, widgets |
 
 The architecture section (§10) describes the target design. For how the code is structured today, read
@@ -158,7 +164,9 @@ These came out of the research. Each one is an opportunity:
 
 ## 4. Core concepts & vocabulary
 
-Water names in the chrome, plain names in menus and docs. Every water term has a plain alias the user can switch to (Settings → General → "Use plain names").
+Current UI text uses **repository**, **session**, **worktree**, **Needs You** and **archive**.
+`Pool`, `Current`, `Channel`, `shore` and `settle` remain internal code names. There is no naming toggle.
+The table below is design vocabulary for reading this roadmap, not a list of labels in the app.
 
 | Watercoded | Plain name | Definition |
 |---|---|---|
@@ -550,7 +558,7 @@ The same vessel glyph appears in the sidebar, Dock icon badge (water level + dro
 ┌───────────────────────────────┴────── watercoded-daemon (launchd agent) ─────────────┐
 │  Orchestrator (event-sourced): Commands → Events → Projections + Outbox (1 txn)       │
 │  Effect workers: provider turns · Tide snapshots · git ops · Springs · PR watchers     │
-│  Provider adapters: ClaudeSDK(TS sidecar) · CodexAppServer · ACP · OpenCode · …       │
+│  Provider adapters: Claude CLI · CodexAppServer · ACP · OpenCode · …                 │
 │  Channel manager (worktrees, containers, ports, setup scripts)                         │
 │  Crosscurrents engine (read/write map + merge-tree)                                    │
 │  MCP server (agents control the app) · Webhook receiver · Scheduler                    │
@@ -564,7 +572,7 @@ The same vessel glyph appears in the sidebar, Dock icon badge (water level + dro
 |---|---|---|
 | UI | **SwiftUI**, with AppKit where needed (window tracking, text views) | Liquid Glass is native only. AppKit interop for performance-critical text. |
 | Daemon language | **Swift** (server-side, structured concurrency) | One language. Runs as a launchd agent. Ships as a Linux binary too, for SSH hosts. |
-| Claude integration | **Drive the user's own installed `claude` CLI** (`--input-format/--output-format stream-json`) by default. The **Agent SDK sidecar** is an option for API-key users. | Subscription rules (§17.1): Watercoded must never offer or handle Claude.ai login itself. Spawning the CLI the user installed and logged into keeps auth with Anthropic's own tool. |
+| Claude integration | **Drive the user's own installed `claude` CLI** (`--input-format/--output-format stream-json`) by default. A future **Agent SDK sidecar** is proposed for API-key users. | Subscription rules (§17.1): Watercoded must never offer or handle Claude.ai login itself. Spawning the CLI the user installed and logged into keeps auth with Anthropic's own tool. |
 | Codex | `codex app-server` directly from Swift | Clean JSON-RPC. Generate Swift types from its JSON Schema. |
 | Others | ACP client in Swift | One protocol, many agents |
 | State | **Event-sourced**, SQLite via GRDB, command IDs for idempotent retries | Proven by T3: reconnect replay, remote clients, crash safety |
@@ -657,20 +665,26 @@ The UI derives every water parameter from projections of these events. The water
 | Crosscurrents check | < 200 ms per Channel pair |
 | Reconnect after sleep | < 1 s to full state |
 
-Benchmarks run in CI (XCTest performance + Instruments signposts). A public perf page, because jcode shows people care.
+Planned validation: performance benchmarks and Instruments signposts, plus a public performance page.
+Current CI runs formatting/lint checks, package tests and a Release build; it does not enforce these budgets.
 
 ---
 
 ## 13. Security & trust model
 
-- **Least privilege by default**: new Pools start in Ask mode. Full access requires an explicit per-Pool toggle and shows a persistent red chip.
-- **Secrets**: all tokens in the Keychain. Remote device keys in the Secure Enclave. Nothing in plaintext config.
+- **Least privilege by default (current)**: new sessions default to Ask, configurable in General settings.
+  Full Access is selected per session and confirmed in the UI. Worktrees isolate changes but are not security sandboxes.
+- **Provider credentials (current)**: authentication remains with the installed agent CLIs. Watercoded does
+  not provide a credential store; local transcripts and logs can contain sensitive tool output.
+- **Future remote credentials**: Keychain storage and Secure Enclave device keys; remote pairing is not built.
 - **Remote pairing**: one-time QR / code, **scoped capabilities** (`currents:read`, `currents:operate`, `terminal:operate`, `fs:write`, `git:push`), revocable per device, expiring
 - **Untrusted input**: webhook payloads, PR comments, issue bodies and web pages are wrapped and labeled as data to the agent. Springs triggered by external events default to Plan or Ask mode.
 - **Containers** (optional per Pool): filesystem limited to the Channel, network allowlist, no host Keychain
 - **Push protection**: pushing to protected branches (main / master / release) always requires a human Droplet
 - **Audit log**: every agent action, approval and app-control call, exportable
-- **Telemetry**: off by default. Crash reports opt-in. No code or prompts ever leave the machine except to the providers the user chose.
+- **Telemetry (current)**: none. Release builds contact GitHub for updates. Agent tools and MCP servers
+  can make network requests; exports and pull request descriptions can share session content.
+  An opt-in crash reporting system is not implemented.
 
 ---
 
@@ -687,6 +701,21 @@ Benchmarks run in CI (XCTest performance + Instruments signposts). A public perf
 ---
 
 ## 15. Keyboard map
+
+Current shortcuts (defined in `WatercodedCommands` and feature views):
+
+| Action | Shortcut |
+|---|---|
+| New session | `⌘N` |
+| Add repository | `⇧⌘O` |
+| Search sessions | `⇧⌘F` |
+| Toggle Changes inspector | `⌥⌘I` |
+| What the Water Means | `⇧⌘/` |
+| Interrupt agent | `⌘.` |
+| Allow / deny pending approval | `⇧⌘⏎` / `⇧⌘⌫` |
+| Settings | `⌘,` |
+
+The following is the **proposed** expanded map; many actions and shortcut rebinding are not implemented.
 
 | Action | Shortcut |
 |---|---|
@@ -711,13 +740,18 @@ Benchmarks run in CI (XCTest performance + Instruments signposts). A public perf
 | Settle Current | `⌘⇧S` |
 | Snooze (freeze) | `⌘⌥S` |
 
-Fully rebindable: `~/.watercoded/keybindings.json` with `when` clauses (`composerFocus`, `turnRunning`, `terminalFocus`, `reviewMode`…), in the style of T3.
+Proposed rebinding file: `~/.watercoded/keybindings.json` with `when` clauses (`composerFocus`, `turnRunning`, `terminalFocus`, `reviewMode`…), in the style of T3.
 
 ---
 
 ## 16. Roadmap
 
-### Phase 0: Feel prototype (2 weeks)
+These phases retain the original sequencing and effort estimates, not a release schedule. Work has crossed
+phase boundaries: Codex, PR watching, delegation and release updates already ship; the shared daemon,
+per-tool snapshots, ACP, embedded terminal and most signature features remain unbuilt. Use the built/planned
+table above for current status.
+
+### Phase 0: Feel prototype (original estimate: 2 weeks)
 - A blank SwiftUI window with a Metal water layer in a single vessel
 - Window-drag slosh, shake detector + levels, resize swell, haptics
 - Simulated "agent" event generator driving level / ripples / droplets / clarity
@@ -769,7 +803,7 @@ Fully rebindable: `~/.watercoded/keybindings.json` with `when` clauses (`compose
 | Provider protocols change under us | Adapters isolated behind a normalized event model. Contract tests against recorded transcripts. A "Replay" provider for development (T3 idea). |
 | Claude subscription / auth rules change again | Never handle Claude credentials. The CLI adapter is the default, the SDK adapter is opt-in for API keys. Re-check Anthropic's terms before each release. |
 | Mac-only limits the audience | Deliberate positioning. The daemon is portable, so a web client is possible later. |
-| Mac App Store sandbox | Ship direct (notarized + Sparkle) first |
+| Mac App Store sandbox | Ship direct with Sparkle; current releases are ad-hoc signed, notarization is future work (ADR 0013) |
 | Competing with well-funded tools (Codex app, Claude Desktop, Conductor) | Win on native feel, multi-provider support, Tide / Delta / Crosscurrents, and openness |
 | Liquid Glass + custom water mismatch | Design QA pass. Keep water inside our own vessels, never over system glass. |
 
@@ -780,9 +814,9 @@ Fully rebindable: `~/.watercoded/keybindings.json` with `when` clauses (`compose
 3. **Minimum OS: macOS 26** (and iOS 26 for the companion). No pre-Liquid Glass fallback code.
 4. **Claude integration: subscription-aware**:
    - **Watercoded never sees, stores or brokers Claude credentials.** By default it launches the user's own `claude` CLI (installed and authenticated by the user) over stream-json, the way T3 Code and MonoCode work. Whatever plan that CLI is entitled to is between the user and Anthropic.
-   - The **Agent SDK sidecar** is a second adapter for users with an **API key** (Console org; some Max/Team plans include monthly API credits). It unlocks SDK-only features (in-process hooks, `canUseTool`, `rewindFiles`).
+   - A future **Agent SDK sidecar** could be a second adapter for users with an **API key** (Console org; some Max/Team plans include monthly API credits). It unlocks SDK-only features (in-process hooks, `canUseTool`, `rewindFiles`).
    - Because Tide (§8.1) does its own git-level snapshots, the CLI adapter loses almost nothing that matters.
-5. **Phase 0: done.** The feel prototype validated the water engine, and it now lives on as the `Meniscus` module. Phase 1 is partly built (v0.1); see [What's built today](#whats-built-today).
+5. **Phase 0: done.** The feel prototype validated the water engine, and it now lives on as the `Meniscus` module. Features across the original phases now ship in v0.8; see [What's built today](#whats-built-today).
 
 ---
 
