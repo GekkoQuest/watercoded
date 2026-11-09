@@ -103,7 +103,11 @@ struct StorageSettings: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await workspace.removeWorktrees(targets)
+            let kept = try await workspace.removeWorktrees(targets)
+            if !kept.isEmpty {
+                let names = kept.map { $0.sessionTitle ?? $0.url.lastPathComponent }.joined(separator: ", ")
+                errorMessage = "Kept \(names): it's in use again by an open session."
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

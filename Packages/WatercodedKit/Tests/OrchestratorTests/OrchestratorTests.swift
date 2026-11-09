@@ -169,6 +169,11 @@ struct WorkspaceTests {
         #expect(!FileManager.default.fileExists(atPath: controller.current.channel.url.path))
 
         controller.reopen()
+        // A list measured before the reopen must not remove the worktree now that it's in use again.
+        try await fixture.workspace.worktrees.restoreChannelIfNeeded(controller.current.channel, in: pool)
+        let kept = try await fixture.workspace.removeWorktrees([item])
+        #expect(kept.count == 1)
+        #expect(FileManager.default.fileExists(atPath: controller.current.channel.url.path))
         await controller.send("Carry on")
         #expect(FileManager.default.fileExists(atPath: controller.current.channel.url.path))
     }

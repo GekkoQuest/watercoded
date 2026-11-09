@@ -32,8 +32,13 @@ extension Workspace {
               canBranch(controller, at: messageID, point) else { throw WorkspaceError.cannotBranch }
         let source = controller.current
         let title = "\(source.title) (branch)"
-        let base = point == .after ? snapshot.afterCommit : snapshot.beforeCommit
-        let channel = try await worktrees.makeWorktreeChannel(for: pool, title: title, base: base)
+        guard let files = point == .after ? snapshot.afterCommit : snapshot.beforeCommit else {
+            throw WorkspaceError.cannotBranch
+        }
+        // Branch from a real commit (the one the snapshot was taken on) and lay the snapshot's files on top, so the
+        // branch shares the repository's history and can Land.
+        let ancestor = await git.snapshotParent(files, in: pool.rootURL) ?? source.channel.baseCommit
+        let channel = try await worktrees.makeWorktreeChannel(for: pool, title: title, base: ancestor, files: files)
 
         var branched = Current(
             poolID: pool.id,

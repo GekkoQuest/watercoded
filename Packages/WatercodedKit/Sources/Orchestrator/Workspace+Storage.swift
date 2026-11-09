@@ -60,10 +60,23 @@ extension Workspace {
     }
 
     /// Removes worktrees that no open session uses. Branches and their commits are kept.
-    public func removeWorktrees(_ items: [WorktreeInfo]) async throws {
+    /// Ownership is checked again now, not trusted from when the list was measured: a session reopened since
+    /// then keeps its worktree. Returns the worktrees kept for that reason.
+    @discardableResult
+    public func removeWorktrees(_ items: [WorktreeInfo]) async throws -> [WorktreeInfo] {
+        var kept: [WorktreeInfo] = []
         for item in items where item.isRemovable {
+            let inUse = currents.contains {
+                $0.current.status != .settled && $0.current.channel.kind == .worktree
+                    && Self.samePath($0.current.channel.url, item.url)
+            }
+            if inUse {
+                kept.append(item)
+                continue
+            }
             try await worktrees.removeWorktree(at: item.url)
         }
+        return kept
     }
 
     private static func samePath(_ lhs: URL, _ rhs: URL) -> Bool {

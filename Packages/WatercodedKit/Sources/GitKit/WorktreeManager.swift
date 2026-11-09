@@ -23,8 +23,14 @@ public struct WorktreeManager: Sendable {
             .appending(path: "worktrees", directoryHint: .isDirectory)
     }
 
-    /// Creates a new worktree on a fresh branch from `base` (default: the pool's current `HEAD`).
-    public func makeWorktreeChannel(for pool: Pool, title: String, base: String? = nil) async throws -> Channel {
+    /// Creates a new worktree on a fresh branch from `base` (default: the pool's current `HEAD`). With `files`, the
+    /// worktree's files are then set to that snapshot, uncommitted, so the branch keeps `base`'s history.
+    public func makeWorktreeChannel(
+        for pool: Pool,
+        title: String,
+        base: String? = nil,
+        files snapshot: String? = nil
+    ) async throws -> Channel {
         var start = base
         if start == nil {
             start = try await git.headCommit(in: pool.rootURL)
@@ -39,6 +45,9 @@ public struct WorktreeManager: Sendable {
         let path = poolFolder.appending(path: name, directoryHint: .isDirectory)
         let branch = Self.branchPrefix + name
         try await git.addWorktree(repository: pool.rootURL, path: path, branch: branch, base: base)
+        if let snapshot {
+            try await git.checkOutFiles(of: snapshot, in: path)
+        }
         return Channel(kind: .worktree, path: path.path, branch: branch, baseCommit: base)
     }
 

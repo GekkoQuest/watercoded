@@ -125,7 +125,9 @@ extension Workspace {
             ref: "refs/watercoded/delegations/\(request.id)/base",
             message: "Delegation base"
         )
-        let channel = try await worktrees.makeWorktreeChannel(for: pool, title: title, base: base)
+        let ancestor = await git.snapshotParent(base, in: pool.rootURL) ?? parent.current.channel.baseCommit
+        var channel = try await worktrees.makeWorktreeChannel(for: pool, title: title, base: ancestor, files: base)
+        channel.baseCommit = base // its Changes show only what the helper did, not the parent's work it started from
         var child = Current(
             poolID: parent.current.poolID,
             title: title,

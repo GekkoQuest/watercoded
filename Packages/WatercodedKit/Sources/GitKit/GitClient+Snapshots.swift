@@ -26,13 +26,30 @@ extension GitClient {
         let indexEnvironment = ["GIT_INDEX_FILE": temporaryIndex.path]
         try await run(["add", "--all", "--", "."], in: worktree, extraEnvironment: indexEnvironment)
         let tree = try await run(["write-tree"], in: worktree, extraEnvironment: indexEnvironment)
+        // The snapshot's parent is the HEAD it was taken on, so branches started from it keep the repository's
+        // history (a parentless snapshot would make them "unrelated histories" that can't be merged).
+        let head = try? await run(["rev-parse", "--verify", "-q", "HEAD"], in: worktree)
+        let parent = head.flatMap { $0.isEmpty ? nil : ["-p", $0] } ?? []
         let commit = try await run(
-            ["commit-tree", tree, "-m", message],
+            ["commit-tree", tree] + parent + ["-m", message],
             in: worktree,
             extraEnvironment: Self.snapshotIdentity
         )
         try await run(["update-ref", ref, commit], in: worktree)
         return commit
+    }
+
+    /// The commit a snapshot was taken on (its parent), or `nil` for older snapshots that don't record one.
+    public func snapshotParent(_ snapshot: String, in repository: URL) async -> String? {
+        let parent = try? await run(["rev-parse", "--verify", "-q", "\(snapshot)^"], in: repository)
+        return parent.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Makes `worktree`'s files match `snapshot` without committing: `HEAD` stays where it is and the differences
+    /// show as uncommitted changes (new files untracked, removed files deleted).
+    public func checkOutFiles(of snapshot: String, in worktree: URL) async throws {
+        try await run(["read-tree", "-u", "--reset", snapshot], in: worktree)
+        try await run(["reset", "-q"], in: worktree) // index back to HEAD; the files stay as the snapshot has them
     }
 
     /// Deletes every ref under `prefix` (e.g. a deleted Current's snapshots).
@@ -90,6 +107,9 @@ extension FileDiff {
             case .deletion: "-"
             }
             lines.append(marker + line.text)
+            if line.isMissingNewline {
+                lines.append("\\ No newline at end of file")
+            }
         }
         return lines.joined(separator: "\n") + "\n"
     }

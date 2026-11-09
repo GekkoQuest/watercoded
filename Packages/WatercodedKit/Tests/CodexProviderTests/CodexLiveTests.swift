@@ -136,10 +136,28 @@ struct CodexLiveTests {
                 break
             }
         }
-        await second.terminate()
         #expect(restored, "the pending approval is restored after reattaching")
         #expect(outcome == .completed)
         #expect(FileManager.default.fileExists(atPath: folder.appending(path: "made-by-codex.txt").path))
+
+        // The relay log doesn't carry settings; once restored, Full Access approves on its own again.
+        await second.restoreSettings(SessionConfiguration(workingDirectory: folder, permissionMode: .fullAccess))
+        try await second.send(UserMessage(text: "Run the shell command `touch second.txt`, then reply DONE."))
+        var askedAgain = false
+        var secondOutcome: TurnOutcome?
+        for await event in second.events {
+            if case .permissionRequested = event {
+                askedAgain = true
+            }
+            if case let .turnFinished(result) = event {
+                secondOutcome = result
+                break
+            }
+        }
+        await second.terminate()
+        #expect(!askedAgain, "restored Full Access doesn't ask")
+        #expect(secondOutcome == .completed)
+        #expect(FileManager.default.fileExists(atPath: folder.appending(path: "second.txt").path))
     }
 
     @Test(arguments: [PermissionMode.ask, .fullAccess])
