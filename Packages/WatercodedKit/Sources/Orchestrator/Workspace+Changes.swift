@@ -5,7 +5,9 @@ import WatercodedCore
 
 /// Which changes to show for a Current.
 public enum ChangeScope: Hashable, Sendable {
-    /// Everything since the Current started.
+    /// Staged, unstaged and untracked changes against the latest commit.
+    case uncommitted
+    /// Everything since the Current started, including committed work.
     case session
     /// One turn, by its 1-based index.
     case turn(Int)
@@ -17,6 +19,8 @@ extension Workspace {
         guard let current = controller(id)?.current else { return UnifiedDiff(files: []) }
         let channel = current.channel
         switch scope {
+        case .uncommitted:
+            return try await UnifiedDiff(parsing: git.diff(in: channel.url, against: "HEAD"))
         case .session:
             return try await UnifiedDiff(parsing: git.diff(in: channel.url, against: channel.baseCommit))
         case let .turn(index):
@@ -29,17 +33,37 @@ extension Workspace {
         }
     }
 
-    /// Restores a file to how it was when the Current started.
-    public func revert(_ file: FileDiff, in id: CurrentID) async throws {
+    /// Restores a file to the selected live comparison baseline.
+    public func revert(_ file: FileDiff, in id: CurrentID, scope: ChangeScope = .session) async throws {
         guard let controller = controller(id) else { return }
         let channel = controller.current.channel
-        try await git.revertFile(file, to: channel.baseCommit, in: channel.url)
+        let base: String
+        switch scope {
+        case .uncommitted:
+            // A commit may have landed since the inspector loaded this patch.
+            guard try await diff(for: id, scope: .uncommitted).files.contains(file) else {
+                controller.noteFilesChanged()
+                return
+            }
+            base = "HEAD"
+        case .session: base = channel.baseCommit
+        case .turn: throw AgentError.unsupported("Reverting a historical turn")
+        }
+        try await git.revertFile(file, to: base, in: channel.url)
         controller.noteFilesChanged()
     }
 
     /// Undoes one hunk of a file's changes.
-    public func revert(_ hunk: Hunk, of file: FileDiff, in id: CurrentID) async throws {
+    public func revert(
+        _ hunk: Hunk, of file: FileDiff, in id: CurrentID, scope: ChangeScope = .session
+    ) async throws {
         guard let controller = controller(id) else { return }
+        if scope == .uncommitted {
+            guard try await diff(for: id, scope: .uncommitted).files.contains(file) else {
+                controller.noteFilesChanged()
+                return
+            }
+        }
         try await git.revertHunk(hunk, of: file, in: controller.current.channel.url)
         controller.noteFilesChanged()
     }

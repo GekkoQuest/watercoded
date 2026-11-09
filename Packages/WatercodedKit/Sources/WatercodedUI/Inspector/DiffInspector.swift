@@ -4,13 +4,16 @@ import SwiftUI
 import WatercodedCore
 import WatercodedDesign
 
-/// Changes in the Current's channel, for the whole session or a single turn, refreshed as the
+/// Uncommitted changes, session history or a single turn, refreshed as the
 /// agent edits. Files and hunks can be reverted, opened, or sent to the agent with a question.
 struct DiffInspector: View {
     let controller: CurrentController
     @Environment(Workspace.self) private var workspace
     @Environment(WindowModel.self) private var window
-    @State private var scope = ChangeScope.session
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var scope = ChangeScope.uncommitted
+    @State private var loadedScope: ChangeScope?
+    @State private var reloadID = UUID()
     @State private var diff: UnifiedDiff?
     @State private var errorMessage: String?
     @State private var isLoading = false
@@ -29,23 +32,40 @@ struct DiffInspector: View {
         .environment(\.diffActions, DiffActions(
             revertFile: { file in await perform("Couldn't Revert File") { try await workspace.revert(
                 file,
-                in: controller.id
+                in: controller.id, scope: scope
             ) } },
             revertHunk: { hunk, file in
-                await perform("Couldn't Revert Change") { try await workspace.revert(hunk, of: file, in: controller.id)
+                await perform("Couldn't Revert Change") { try await workspace.revert(
+                    hunk,
+                    of: file,
+                    in: controller.id,
+                    scope: scope
+                )
                 }
             },
             ask: { prompt in controller.draft += (controller.draft.isEmpty ? "" : "\n\n") + prompt },
             comment: { controller.addReviewComment($0) },
             channelURL: controller.current.channel.url
         ))
-        // Reloads automatically whenever the agent may have touched files.
-        .task(id: ReloadKey(revision: controller.activity.fileChangeRevision, scope: scope)) { await reload() }
+        // Poll only while this inspector is visible and the app is active, including external commits/edits.
+        .task(id: ReloadKey(
+            currentID: controller.id, revision: controller.activity.fileChangeRevision,
+            scope: scope, isActive: scenePhase == .active
+        )) {
+            guard scenePhase == .active else { return }
+            await reload()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                await reload(showProgress: false)
+            }
+        }
     }
 
     private struct ReloadKey: Hashable {
+        let currentID: CurrentID
         let revision: Int
         let scope: ChangeScope
+        let isActive: Bool
     }
 
     /// Lives inside the inspector (not the window toolbar) so it's only shown with the changes.
@@ -53,7 +73,7 @@ struct DiffInspector: View {
         VStack(alignment: .leading, spacing: Spacing.small) {
             HStack(spacing: Spacing.small) {
                 Text("Changes").font(.headline)
-                if let diff, !diff.isEmpty {
+                if let diff, loadedScope == scope, !diff.isEmpty {
                     Text("+\(diff.additions)").foregroundStyle(.green)
                     Text("−\(diff.deletions)").foregroundStyle(.red)
                 }
@@ -68,16 +88,22 @@ struct DiffInspector: View {
                 }
             }
             .monospacedDigit()
-            if let snapshots = controller.current.turnSnapshots, !snapshots.isEmpty {
-                Picker("Show", selection: $scope) {
-                    Text("Whole session").tag(ChangeScope.session)
+            Picker("Show", selection: $scope) {
+                Text("Uncommitted changes").tag(ChangeScope.uncommitted)
+                Text("Whole session").tag(ChangeScope.session)
+                if let snapshots = controller.current.turnSnapshots {
                     ForEach(snapshots.reversed()) { snapshot in
                         Text(turnTitle(snapshot, isLatest: snapshot.index == snapshots.last?.index))
                             .tag(ChangeScope.turn(snapshot.index))
                     }
                 }
-                .labelsHidden()
-                .help("Show everything the agent changed, or only what one turn changed")
+            }
+            .labelsHidden()
+            .help("Show uncommitted changes, the whole session including commits, or a single turn")
+            if scope == .session {
+                Text("Includes committed changes since this session started.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, Spacing.medium)
@@ -85,7 +111,9 @@ struct DiffInspector: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let errorMessage {
+        if loadedScope != scope, errorMessage == nil {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let errorMessage {
             ContentUnavailableView(
                 "Couldn't Load Changes",
                 systemImage: "exclamationmark.triangle",
@@ -93,15 +121,19 @@ struct DiffInspector: View {
             )
         } else if let diff, diff.isEmpty {
             ContentUnavailableView(
-                "No Changes",
+                scope == .uncommitted ? "No uncommitted changes" : "No changes",
                 systemImage: "checkmark.circle",
-                description: Text(scope == .session ? "Edits the agent makes appear here." :
-                    "This turn didn't change any files.")
+                description: Text(emptyDescription)
             )
         } else if let diff {
             List {
                 Section("\(diff.files.count) \(diff.files.count == 1 ? "file" : "files") changed") {
-                    ForEach(diff.files) { FileDiffView(file: $0, canRevert: scope == .session) }
+                    ForEach(diff.files) {
+                        FileDiffView(
+                            file: $0, canRevert: scope == .session || scope == .uncommitted,
+                            revertsToLatestCommit: scope == .uncommitted
+                        )
+                    }
                 }
             }
             .listStyle(.inset)
@@ -116,15 +148,37 @@ struct DiffInspector: View {
         return isLatest ? "Last turn · \(time)\(running)" : "Turn \(snapshot.index) · \(time)"
     }
 
-    private func reload() async {
-        isLoading = true
-        defer { isLoading = false }
+    private var emptyDescription: String {
+        switch scope {
+        case .uncommitted: "The working tree is clean. Whole session shows earlier committed work."
+        case .session: "Edits the agent makes appear here."
+        case .turn: "This turn didn't change any files."
+        }
+    }
+
+    private func reload(showProgress: Bool = true) async {
+        let request = UUID()
+        let requestedScope = scope
+        reloadID = request
+        if showProgress {
+            isLoading = true
+        }
+        defer {
+            if reloadID == request {
+                isLoading = false
+            }
+        }
         do {
-            diff = try await workspace.diff(for: controller.id, scope: scope)
+            let updated = try await workspace.diff(for: controller.id, scope: requestedScope)
+            try Task.checkCancellation()
+            guard reloadID == request, scope == requestedScope else { return }
+            diff = updated
+            loadedScope = requestedScope
             errorMessage = nil
         } catch is CancellationError {
             // A newer reload replaced this one (the agent changed more files); keep what's shown.
         } catch {
+            guard reloadID == request, scope == requestedScope else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -154,6 +208,7 @@ extension EnvironmentValues {
 private struct FileDiffView: View {
     let file: FileDiff
     let canRevert: Bool
+    let revertsToLatestCommit: Bool
     @Environment(\.diffActions) private var actions
     @State private var isExpanded = true
     @State private var isConfirmingRevert = false
@@ -193,6 +248,8 @@ private struct FileDiffView: View {
         } message: {
             Text(file.change == .added
                 ? "The agent created this file. Reverting deletes it."
+                : revertsToLatestCommit
+                ? "The file goes back to its latest committed version."
                 : "The file goes back to how it was when this session started.")
         }
     }
