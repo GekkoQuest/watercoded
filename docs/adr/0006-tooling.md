@@ -1,6 +1,6 @@
 # 0006: XcodeGen + SwiftPM, SwiftFormat owns style, zero runtime dependencies
 
-**Status:** Accepted · 2026-11-08
+**Status:** Partly superseded by [0013](0013-github-releases-and-sparkle.md) (runtime dependencies) · 2026-11-08
 
 ## Decision
 - `project.yml` (XcodeGen) generates `Watercoded.xcodeproj`, which isn't committed, so there are no merge conflicts in `pbxproj`.

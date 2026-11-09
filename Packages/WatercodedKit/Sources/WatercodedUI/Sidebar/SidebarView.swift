@@ -8,6 +8,7 @@ import WatercodedDesign
 struct SidebarView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(WindowModel.self) private var window
+    @Environment(\.appUpdate) private var appUpdate
     @State private var pendingDeletion: CurrentController?
 
     var body: some View {
@@ -103,6 +104,13 @@ struct SidebarView: View {
             Button("Add Repository", systemImage: "plus") { window.isAddingPool = true }
                 .help("Add a git repository (⇧⌘O)")
             Spacer()
+            if let appUpdate {
+                Button("Update available", systemImage: "arrow.down.circle") { appUpdate.showDetails() }
+                    .foregroundStyle(Color.accentColor)
+                    .help("Watercoded \(appUpdate.version) is available. Click to review and install the update.")
+                    .accessibilityLabel("Watercoded \(appUpdate.version) update available")
+                    .accessibilityHint("Review and install the update")
+            }
             SettingsLink {
                 Label("Settings", systemImage: "gearshape")
             }

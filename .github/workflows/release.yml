@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags: ['v0.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to release (for example v0.7.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Validate release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v0\.[0-9]+\.[0-9]+$ ]]
+          git rev-parse --verify "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+          git merge-base --is-ancestor HEAD origin/main
+          version=$(sed -n 's/^MARKETING_VERSION = //p' Configs/Base.xcconfig)
+          test "$RELEASE_TAG" = "v$version"
+          # Publishing an older build as latest would strand installed apps on an old feed.
+          latest=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // empty')
+          if [ -n "$latest" ]; then
+            git show "$latest:Configs/Base.xcconfig" > "$RUNNER_TEMP/previous-version.xcconfig"
+            previous=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' "$RUNNER_TEMP/previous-version.xcconfig")
+            current=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Configs/Base.xcconfig)
+            test "$current" -gt "$previous"
+          fi
+      - name: Select Xcode 26
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then sudo xcode-select -s /Applications/Xcode_26.app; fi
+          xcodebuild -version
+          xcodebuild -version | head -1 | grep -Eq '^Xcode (2[6-9]|[3-9][0-9])'
+      - run: brew bundle --file=Brewfile
+      - name: Metal Toolchain
+        run: xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+      - run: make lint
+      - run: make test
+      - run: make build CONFIG=Release
+      - name: Package and sign update
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo '::error::Configure the SPARKLE_PRIVATE_KEY repository secret; see docs/RELEASING.md.'
+            exit 1
+          fi
+          scripts/package-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Watercoded-${{ env.RELEASE_TAG }}
+          path: |
+            .build/release/${{ env.RELEASE_TAG }}/Watercoded-*.zip
+            .build/release/${{ env.RELEASE_TAG }}/appcast.xml
+          if-no-files-found: error
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            .build/release/"$RELEASE_TAG"/Watercoded-*.zip \
+            .build/release/"$RELEASE_TAG"/appcast.xml \
+            --verify-tag --title "Watercoded $RELEASE_TAG" --generate-notes --latest

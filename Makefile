@@ -3,9 +3,11 @@ SHELL := /bin/bash
 PACKAGE := Packages/WatercodedKit
 DERIVED := .build/xcode
 CONFIG ?= Debug
-APP := $(DERIVED)/Build/Products/$(CONFIG)/Watercoded.app
+INSTALL_DIR ?= /Applications
+APP_NAME := $(if $(filter Debug,$(CONFIG)),Watercoded Development,Watercoded)
+APP := $(DERIVED)/Build/Products/$(CONFIG)/$(APP_NAME).app
 
-.PHONY: help doctor bootstrap generate build run test lint format icon clean
+.PHONY: help doctor bootstrap generate build run test lint format icon install clean
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -29,6 +31,10 @@ build: generate ## Build the app (CONFIG=Debug|Release)
 
 run: build ## Build and launch the app
 	open "$(APP)"
+
+install: ## Build Release and install in /Applications (INSTALL_DIR to override)
+	$(MAKE) build CONFIG=Release
+	@scripts/install.sh "$(DERIVED)/Build/Products/Release/Watercoded.app" "$(INSTALL_DIR)"
 
 test: ## Run the package test suite
 	swift test --package-path $(PACKAGE)

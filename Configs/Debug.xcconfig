@@ -6,3 +6,7 @@ CODE_SIGN_STYLE = Manual
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
 SWIFT_OPTIMIZATION_LEVEL = -Onone
 ONLY_ACTIVE_ARCH = YES
+
+// Keep development builds separate from the installed app in Finder, Spotlight and Launch Services.
+PRODUCT_NAME = Watercoded Development
+PRODUCT_BUNDLE_IDENTIFIER = dev.watercoded.app.debug

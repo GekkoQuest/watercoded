@@ -23,8 +23,9 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.6). There's no prebuilt download yet: you build it from source, which takes a few minutes
-> once Xcode is installed. The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
+> **Status:** early (v0.7). Tagged versions publish app downloads to
+> [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
+> The longer-term vision and roadmap is in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## What it does
 
@@ -87,8 +88,8 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 ## Requirements
 
 - macOS 26 or later (Liquid Glass)
-- Xcode 26 or later, **opened once** (so it finishes installing components and you accept the license)
-- [Homebrew](https://brew.sh)
+- **To build from source:** Xcode 26 or later, **opened once** (so it finishes installing components and you accept the license)
+- **To build from source:** [Homebrew](https://brew.sh)
 
 Optional:
 
@@ -109,7 +110,13 @@ Optional:
 
 ## Getting started
 
-On a brand-new Mac:
+For a prebuilt version, download the ZIP from [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases),
+extract it and move Watercoded.app into Applications. These builds are not notarized: after attempting to open
+one, macOS may require **System Settings > Privacy & Security > Open Anyway**. Release builds show an update icon beside Settings when a new version is available;
+hover to see the version and click to review and install. You can also use **Watercoded > Check for Updates…**. Installing an update requires confirmation.
+See [release and installation details](docs/RELEASING.md).
+
+To build from source on a brand-new Mac:
 
 ```bash
 git clone https://github.com/GekkoQuest/watercoded.git
@@ -131,6 +138,7 @@ make test        # package test suite (Swift Testing)
 make lint        # SwiftFormat --lint + SwiftLint --strict
 make format      # apply formatting
 make icon        # regenerate the app icon
+make install     # build Release and install in /Applications
 open Watercoded.xcodeproj   # after `make generate`
 ```
 
@@ -214,7 +222,7 @@ Each AI provider is its own module behind the `AgentProvider` protocol. Adding o
 
 ## Privacy and credentials
 
-Watercoded never sees, stores or brokers your AI credentials. It launches the CLIs you installed and signed in to, so authentication stays with the provider's own tool. Telemetry: none.
+Watercoded never sees, stores or brokers your AI credentials. It launches the CLIs you installed and signed in to, so authentication stays with the provider's own tool. Telemetry: none. Release builds contact GitHub to check for app updates and download updates you approve.
 
 ## License
 

@@ -70,9 +70,10 @@ project.yml               XcodeGen spec
 
 ## Releasing (maintainers)
 
-There's no release pipeline yet. CI builds the Release configuration with ad-hoc signing
-(`Configs/Release.xcconfig`) to check it compiles, but nothing is signed with Developer ID, notarized or published.
-Until that exists, users build from source.
+Version tags trigger the GitHub Release workflow, which checks, builds and packages an ad-hoc signed app,
+then publishes a Sparkle-signed update archive and feed. No paid Apple developer account is needed.
+Developer ID signing and notarization can be added later. See [docs/RELEASING.md](docs/RELEASING.md)
+for installation, signing key setup and release instructions.
 
 The version lives in one place: `MARKETING_VERSION` in `Configs/Base.xcconfig`. Every push to `main` bumps it
 (patch for fixes and docs, minor for features), increases `CURRENT_PROJECT_VERSION`, and is tagged

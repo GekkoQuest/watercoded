@@ -113,3 +113,11 @@ session (`--resume`).
 - real git worktrees in temporary repositories
 - an end-to-end `Workspace` run against `ReplayProvider(pace: 0)`
 - physics settling and shake detection
+
+## App distribution
+
+The app target embeds Sparkle for GitHub-hosted updates; package modules have no updater dependency.
+`AppUpdater` is created only by the SwiftUI GUI, not by relay/delegation entry points. Release builds
+check signed feeds and require confirmation to install; Debug builds leave the updater stopped.
+Version tags trigger `.github/workflows/release.yml`. See [RELEASING.md](RELEASING.md) for the
+signing-key lifecycle, local installation and distribution without an Apple developer account.

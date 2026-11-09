@@ -5,6 +5,7 @@ import WatercodedUI
 
 struct WatercodedApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var appUpdater = AppUpdater()
     @State private var environment = AppEnvironment.live()
 
     var body: some Scene {
@@ -14,10 +15,19 @@ struct WatercodedApp: App {
                 .environment(environment.providerStatus)
                 .environment(environment.waterEngine)
                 .environment(environment.settings)
+                .environment(\.appUpdate, appUpdater.availableVersion.map { version in
+                    AppUpdate(version: version) { appUpdater.checkForUpdates() }
+                })
                 .onAppear { appDelegate.workspace = environment.workspace }
         }
         .defaultSize(width: 1180, height: 760)
-        .commands { WatercodedCommands() }
+        .commands {
+            WatercodedCommands()
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…", action: appUpdater.checkForUpdates)
+                    .disabled(!appUpdater.canCheckForUpdates)
+            }
+        }
 
         Settings {
             SettingsView()
