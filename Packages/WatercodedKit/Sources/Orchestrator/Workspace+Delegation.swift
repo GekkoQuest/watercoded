@@ -142,12 +142,7 @@ extension Workspace {
         child.titleSource = .prompt
         try await repository.saveCurrent(child)
         let controller = adopt(child, transcript: [])
-        if let setup = pool.worktreeSetup, !setup.isEmpty {
-            let preparer = WorktreePreparer(environment: .shared)
-            let folder = channel.url
-            let root = pool.rootURL
-            controller.pendingSetup = { await preparer.prepare(folder, from: root, with: setup) }
-        }
+        configureWorktreeSetup(for: controller, in: pool)
         return controller
     }
 

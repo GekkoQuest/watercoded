@@ -49,7 +49,7 @@ public final class AppSettings {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.haptics: true, Key.shakeToSettle: true, Key.isolate: true,
-            Key.notifications: true, Key.dockBadge: true
+            Key.notifications: true, Key.dockBadge: true, Key.keepRunning: true
         ])
         physicsIntensity = defaults.string(forKey: Key.physicsIntensity).flatMap(PhysicsIntensity.init) ?? .lively
         hapticsEnabled = defaults.bool(forKey: Key.haptics)

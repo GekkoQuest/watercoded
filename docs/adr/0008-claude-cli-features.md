@@ -39,6 +39,10 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
 - Branching from a turn resumes with `--fork-session --resume-session-at <uuid>`, where the uuid is the last
   main-conversation `assistant` line of that turn (verified with 2.1.319: the fork holds only the history up to it,
   and the original session is untouched). The flag only applies in `--print` mode, which Watercoded always uses.
+  Live regression tests also confirm that a checkpoint from before `/compact` fails on 2.1.319 with
+  `error_during_execution`. Claude therefore does not declare `.branchingAcrossCompaction`: Watercoded disables
+  those old branch points with an explanation, keeps their file snapshots, and allows newer turns to branch.
+  This includes migration of previously saved checkpoints and protection against compaction racing a snapshot save.
 - These are undocumented internals and may change. Unit tests use recorded fixtures. `WATERCODED_LIVE_CLAUDE=1 swift test --package-path Packages/WatercodedKit --filter ClaudeCodeLiveTests` re-verifies them against the installed CLI and should be run when upgrading it.
 - The shared composer commands dispatch native `/compact` and `/goal` messages. Claude owns compaction, goal
   evaluation and continuation. Goal availability still follows Claude's workspace trust and hook settings;
@@ -46,4 +50,5 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
   exposes successful result text when no assistant text was emitted for the turn, without duplicating normal replies.
   These command forms are documented in [SDK commands](https://code.claude.com/docs/en/agent-sdk/slash-commands)
   and [Goals](https://code.claude.com/docs/en/goal). Unit tests cover dispatch text and result translation;
-  command execution has not been re-verified with live inference on 2.1.319.
+  manual compaction and goal inspection have also been verified live on 2.1.319. Goal setting and clearing
+  remain covered by dispatch tests rather than live inference.

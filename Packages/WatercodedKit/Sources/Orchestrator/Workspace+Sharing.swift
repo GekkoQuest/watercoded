@@ -68,19 +68,32 @@ extension Workspace {
 
     public struct SearchHit: Identifiable, Hashable {
         public let currentID: CurrentID
-        public let itemID: UUID
+        public let itemID: UUID?
         public let snippet: String
         public var id: String {
-            "\(currentID)-\(itemID)"
+            "\(currentID)-\(itemID?.uuidString ?? "title")"
         }
     }
 
     /// Case-insensitive search across every Current's titles, messages and tool calls.
     public func search(_ query: String, limit: Int = 200) -> [SearchHit] {
         let needle = query.trimmingCharacters(in: .whitespaces)
-        guard needle.count >= 2 else { return [] }
+        guard needle.count >= 2, limit > 0 else { return [] }
         var hits: [SearchHit] = []
         for controller in currents {
+            if let range = controller.current.title.range(
+                of: needle,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            ) {
+                hits.append(SearchHit(
+                    currentID: controller.id,
+                    itemID: nil,
+                    snippet: Self.snippet(controller.current.title, around: range)
+                ))
+                if hits.count >= limit {
+                    return hits
+                }
+            }
             for item in controller.transcript {
                 let text: String? = switch item.content {
                 case let .user(text), let .assistant(text): text
@@ -119,19 +132,20 @@ extension Workspace {
     /// worktree, so the two results can be compared.
     public func rerun(_ id: CurrentID, providerID: ProviderID, model: String?) async throws -> CurrentController {
         guard let original = controller(id),
-              let prompt = original.transcript
-                  .compactMap({
-                      if case let .user(text) = $0.content {
-                          text
-                      } else {
-                          nil
-                      }
-                  }).first
+              let message = original.transcript.first(where: {
+                  if case .user = $0.content {
+                      true
+                  } else {
+                      false
+                  }
+              }),
+              case let .user(prompt) = message.content
         else { throw WorkspaceError.poolNotFound }
         let label = model ?? registry.provider(for: providerID)?.descriptor.displayName ?? providerID.rawValue
         return try await startCurrent(NewCurrentRequest(
             poolID: original.current.poolID,
             prompt: prompt,
+            images: Self.images(before: message.id, in: original.transcript),
             title: "\(original.current.title) (\(label))",
             providerID: providerID,
             model: model,

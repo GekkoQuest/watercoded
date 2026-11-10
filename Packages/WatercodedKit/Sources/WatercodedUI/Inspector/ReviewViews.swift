@@ -62,12 +62,16 @@ struct ReviewTray: View {
                 .textFieldStyle(.roundedBorder)
             Button("Send Review to Agent") {
                 let note = summary
-                summary = ""
-                Task { await controller.sendReview(summary: note) }
+                Task {
+                    if await controller.sendReview(summary: note), summary == note {
+                        summary = ""
+                    }
+                }
             }
             .buttonStyle(.glassProminent)
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .disabled(controller.isTurnActive && !controller.capabilities.contains(.queueing))
+            .disabled(controller
+                .isSendingReview || (controller.isTurnActive && !controller.capabilities.contains(.queueing)))
         }
         .padding(Spacing.medium)
     }

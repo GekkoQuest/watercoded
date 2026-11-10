@@ -25,9 +25,13 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.9). Tagged versions publish app downloads to
+> **Status:** early (v0.10). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
 > The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
+
+v0.10 adds local document previews, clickable file references and saved image attachments with preview,
+copy and save actions. It also improves transcript recovery, verification, process timeouts, review
+submission, worktree setup and session search.
 
 ## What it does
 
@@ -46,14 +50,19 @@ Reduce Motion is respected: the water stays still and only the level changes. He
 - **Live settings:** switch model, effort or permissions mid-session. Models are listed by exact version
   ("Default (Opus 5.5)"), and Auto effort shows the model's default ("Auto (Medium)"). Any custom model name works too.
 - **A real composer:** `@` to mention files, `/` for shared session commands and the agent's additional commands,
-  and image attachments with providers that enable them (currently Codex).
+  and image attachments with providers that enable them (currently Codex). Click an image thumbnail to preview,
+  copy or save it, before sending or later in the conversation. Newly sent images remain available after relaunch.
+- **Links that open:** web links open in your browser; local file links open in Watercoded with Markdown, text
+  or Quick Look previews. Relative paths use the session's folder, and source links highlight the requested line.
 - **Agents delegate to agents:** ask one agent to hand part of the work to another, in any direction (Claude Code →
   Codex, Codex → Claude Code, or another model of the same agent): "have GPT-6.1-Sol write the migration". Helpers
   run as their own sessions under the first, each in its own copy of the folder, so several can work at once while
   the first keeps going. Their approvals show as usual; when one finishes, its changes are applied back (never over
   edits made meanwhile) and its answer goes to the agent that asked.
-- **Branch any turn:** right-click a message to branch from it, or edit and resend it, in a new worktree with the
-  files and conversation from that point. The original session is untouched.
+- **Branch a turn:** right-click a message to branch from it, or edit and resend it, in a new worktree with the
+  files and conversation from that point. The original session is untouched. Claude Code discards older
+  conversation checkpoints during compaction, so those turns can still be reviewed but cannot be branched;
+  branch from a newer turn instead. Codex keeps older checkpoints available after compaction.
 - **Agents outlive the app:** Claude Code and Codex keep working under background relays by default; Watercoded
   reconnects on launch, including approvals that arrived while it was closed. Settings ▸ General can turn this
   off for agents started afterward. If an agent was stopped, **Resume** picks its conversation back up.
@@ -297,7 +306,7 @@ Each AI provider is its own module behind the `AgentProvider` protocol. Adding o
 ## Privacy and credentials
 
 Watercoded does not manage provider logins or credential storage. It launches the CLIs you installed and
-signed in to, so authentication stays with the provider's own tool. Transcripts and background logs are
+signed in to, so authentication stays with the provider's own tool. Transcripts, attached images and background logs are
 stored locally and can contain prompts, tool output and sensitive data returned by tools. Exporting a
 session or opening a pull request can share session content; review it before sharing. Telemetry: none.
 Release builds contact GitHub to check for app updates and download updates you approve. See

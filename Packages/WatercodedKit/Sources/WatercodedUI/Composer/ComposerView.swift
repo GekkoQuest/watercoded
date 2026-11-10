@@ -17,6 +17,7 @@ struct ComposerView: View {
     @State private var files: [String] = []
     @State private var isDropTargeted = false
     @State private var isSubmitting = false
+    @State private var attachmentError: String?
 
     /// The field and its buttons are concentric: every button sits `inset` from the field's edge,
     /// and the field's corner radius is the buttons' radius plus `inset`.
@@ -34,7 +35,9 @@ struct ComposerView: View {
             }
             VStack(alignment: .leading, spacing: Spacing.small) {
                 if !controller.draftImages.isEmpty {
-                    AttachmentStrip(images: $controller.draftImages)
+                    ImageAttachmentsView(images: controller.draftImages) { id in
+                        controller.draftImages.removeAll { $0.id == id }
+                    }
                 }
                 inputRow
             }
@@ -56,7 +59,25 @@ struct ComposerView: View {
             }
             .onDrop(of: [.image, .fileURL], isTargeted: $isDropTargeted, perform: acceptDrop)
         }
-        .background(ImagePasteMonitor(isActive: isFocused && acceptsImages) { controller.draftImages += $0 })
+        .background(ImagePasteMonitor(isActive: isFocused && canAttach) { images in
+            for image in images {
+                if let attachment = ImageAttachment(image: image) {
+                    controller.draftImages.append(attachment)
+                } else {
+                    attachmentError = AttachmentImportError.invalidImage.localizedDescription
+                }
+            }
+        })
+        .alert(
+            "Couldn't attach image",
+            isPresented: Binding(get: { attachmentError != nil }, set: {
+                if !$0 {
+                    attachmentError = nil
+                }
+            })
+        ) {
+            Button("OK", role: .cancel) { attachmentError = nil }
+        } message: { Text(attachmentError ?? "") }
         .onAppear { isFocused = true }
         .task(id: controller.id) { files = await workspace.files(for: controller.id) }
         .onChange(of: controller.draft) { old, new in
@@ -73,6 +94,7 @@ struct ComposerView: View {
                 ComposerButton(title: "Attach Images", systemImage: "paperclip", size: buttonSize, isProminent: false) {
                     chooseImages()
                 }
+                .disabled(!canAttach)
             }
             TextField(placeholder, text: $controller.draft, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -111,6 +133,10 @@ struct ComposerView: View {
     }
 
     // MARK: Sending
+
+    private var canAttach: Bool {
+        acceptsImages && !isSubmitting && controller.current.status != .settled
+    }
 
     private var acceptsImages: Bool {
         controller.capabilities.contains(.images)
@@ -169,16 +195,30 @@ struct ComposerView: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
-        controller.draftImages += panel.urls.compactMap { ImageAttachment(fileURL: $0) }
+        for url in panel.urls {
+            if let image = ImageAttachment(fileURL: url) {
+                controller.draftImages.append(image)
+            } else {
+                attachmentError = AttachmentImportError.invalidImage.localizedDescription
+            }
+        }
     }
 
     private func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard acceptsImages else { return false }
-        for provider in providers {
-            _ = provider.loadDataRepresentation(for: .image) { data, _ in
-                guard let data, let image = NSImage(data: data),
-                      let attachment = ImageAttachment(image: image) else { return }
-                Task { @MainActor in controller.draftImages.append(attachment) }
+        guard canAttach else { return false }
+        let supported = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+                || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+        guard !supported.isEmpty else { return false }
+        Task {
+            for provider in supported {
+                do {
+                    let image = try await AttachmentImport.load(provider)
+                    if canAttach {
+                        controller.draftImages.append(image)
+                    }
+                } catch { attachmentError = error.localizedDescription }
             }
         }
         return true
@@ -275,42 +315,11 @@ private struct SuggestionList: View {
     }
 }
 
-private struct AttachmentStrip: View {
-    @Binding var images: [ImageAttachment]
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Spacing.small) {
-                ForEach(images) { attachment in
-                    if let image = NSImage(data: attachment.data) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-                            .overlay(alignment: .topTrailing) {
-                                Button("Remove", systemImage: "xmark.circle.fill") {
-                                    images.removeAll { $0.id == attachment.id }
-                                }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.white, .black.opacity(0.6))
-                                .padding(2)
-                            }
-                    }
-                }
-            }
-            .padding(.leading, Spacing.xSmall)
-        }
-        .scrollIndicators(.never)
-    }
-}
-
 /// Catches ⌘V while the composer is focused and the clipboard holds an image (text fields
 /// ignore pasted images), turning it into an attachment.
 private struct ImagePasteMonitor: NSViewRepresentable {
     let isActive: Bool
-    let onImages: ([ImageAttachment]) -> Void
+    let onImages: ([NSImage]) -> Void
 
     func makeNSView(context: Context) -> NSView {
         NSView()
@@ -330,7 +339,7 @@ private struct ImagePasteMonitor: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var onImages: ([ImageAttachment]) -> Void = { _ in }
+        var onImages: ([NSImage]) -> Void = { _ in }
         private var monitor: Any?
 
         func setActive(_ active: Bool) {
@@ -342,7 +351,7 @@ private struct ImagePasteMonitor: NSViewRepresentable {
                     guard pasteboard.string(forType: .string) == nil,
                           let images = pasteboard.readObjects(forClasses: [NSImage.self]) as? [NSImage], !images.isEmpty
                     else { return event }
-                    self?.onImages(images.compactMap { ImageAttachment(image: $0) })
+                    self?.onImages(images)
                     return nil
                 }
             } else if !active, let monitor {
@@ -350,27 +359,6 @@ private struct ImagePasteMonitor: NSViewRepresentable {
                 self.monitor = nil
             }
         }
-    }
-}
-
-nonisolated extension ImageAttachment {
-    /// Encodes an image for the agent: PNG, or JPEG when PNG would be too large to send.
-    init?(image: NSImage, filename: String? = nil) {
-        guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-        let maximum = 3_500_000
-        if let png = bitmap.representation(using: .png, properties: [:]), png.count <= maximum {
-            self.init(mediaType: "image/png", data: png, filename: filename)
-        } else if let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]),
-                  jpeg.count <= maximum {
-            self.init(mediaType: "image/jpeg", data: jpeg, filename: filename)
-        } else {
-            return nil
-        }
-    }
-
-    init?(fileURL: URL) {
-        guard let image = NSImage(contentsOf: fileURL) else { return nil }
-        self.init(image: image, filename: fileURL.lastPathComponent)
     }
 }
 

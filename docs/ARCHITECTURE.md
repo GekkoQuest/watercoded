@@ -106,8 +106,20 @@ falling back to the host's compare page. The PR description comes from `Workspac
 
 `FileWorkspaceRepository` writes versioned JSON envelopes to `~/Library/Application Support/Watercoded/`:
 `pools.json`, plus `currents/<id>/current.json` and `transcript.json`. Writes are atomic and coalesced (400 ms).
+An unreadable transcript puts its session into an error state and prevents transcript writes or agent startup;
+the original file and any background relay logs are kept for recovery. Restoring a valid transcript and
+relaunching clears that protection.
+Image transcript records retain optional encoded image attachments, so previews survive relaunch and follow
+their user message through branching and reruns. Older count-only records still decode but cannot recover images.
+
+The session screen routes Markdown links through `TranscriptLink`: web URLs keep their browser behavior,
+while local paths become file URLs resolved against the worktree, with source-line suffixes separated from
+the actual filename. Local documents use an in-app preview; nested Markdown links resolve against that
+document's directory. Quick Look handles non-text files without executing them through a default app.
 Worktrees live in `~/.watercoded/worktrees/<pool>/<current>` on branches named `watercoded/<slug>`.
 Turn snapshots are commits under `refs/watercoded/<current-id>/turn-<n>-{before,after}` in the repository.
+Completed snapshots also record whether compaction invalidated their conversation checkpoint. Providers with
+`.branchingAcrossCompaction` keep those checkpoints; other providers invalidate them without losing file history.
 Replay scripts are JSON files in `~/.watercoded/replays/`. Relay logs live in `~/.watercoded/sessions/`
 and delegation messages in `~/.watercoded/delegation/`. Preferences use `UserDefaults`.
 

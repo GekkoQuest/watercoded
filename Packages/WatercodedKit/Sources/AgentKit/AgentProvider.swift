@@ -147,6 +147,8 @@ public struct ProviderCapabilities: OptionSet, Sendable, Hashable {
     public static let compaction = Self(rawValue: 1 << 13)
     /// Can set, inspect and clear a native persistent goal.
     public static let goals = Self(rawValue: 1 << 14)
+    /// Checkpoints from before compaction remain valid for conversation forks.
+    public static let branchingAcrossCompaction = Self(rawValue: 1 << 15)
 }
 
 /// A model a provider can run.

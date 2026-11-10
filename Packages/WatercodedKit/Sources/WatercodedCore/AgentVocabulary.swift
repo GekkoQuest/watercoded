@@ -180,6 +180,8 @@ public struct CheckResult: Hashable, Codable, Sendable {
 
 /// A working-tree snapshot around one turn, stored as commits under `refs/watercoded/`.
 public struct TurnSnapshot: Hashable, Codable, Sendable, Identifiable {
+    /// The provider discarded the conversation checkpoint during compaction; file history still exists.
+    public var checkpointInvalidatedByCompaction: Bool?
     public var index: Int
     public var startedAt: Date
     public var beforeCommit: String
@@ -193,6 +195,7 @@ public struct TurnSnapshot: Hashable, Codable, Sendable, Identifiable {
     }
 
     public init(index: Int, startedAt: Date, beforeCommit: String, afterCommit: String? = nil) {
+        checkpointInvalidatedByCompaction = false
         self.index = index
         self.startedAt = startedAt
         self.beforeCommit = beforeCommit

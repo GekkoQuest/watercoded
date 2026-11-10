@@ -77,8 +77,17 @@ public final class Workspace {
         let stored = await (try? repository.loadCurrents()) ?? []
         var controllers: [CurrentController] = []
         for current in stored.sorted(by: { $0.updatedAt > $1.updatedAt }) {
-            let transcript = await (try? repository.loadTranscript(for: current.id)) ?? []
-            controllers.append(makeController(current, transcript: transcript))
+            do {
+                let transcript = try await repository.loadTranscript(for: current.id)
+                controllers.append(makeController(current, transcript: transcript))
+            } catch {
+                let controller = makeController(current, transcript: [])
+                controller.transcriptLoadError = "Couldn't load this session's transcript. The original file has been "
+                    + "kept unchanged. Quit Watercoded and restore transcript.json from a backup, then reopen the app. "
+                    + error.localizedDescription
+                controller.fail(controller.transcriptLoadError ?? "Couldn't load the transcript.")
+                controllers.append(controller)
+            }
         }
         currents = controllers
         isLoaded = true
@@ -86,6 +95,7 @@ public final class Workspace {
         startWatchingDelegations()
 
         for controller in controllers {
+            guard controller.transcriptLoadError == nil else { continue }
             // Idle agents also keep running under their relay. Reattach every saved handle.
             let wasWorking = controller.current.status == .flowing || controller.current.status == .waiting
             let reattached = controller.current.relay != nil ? await controller.reattach() : false
@@ -227,14 +237,9 @@ public final class Workspace {
         current.titleSource = request.title == nil ? .prompt : .user
         try await repository.saveCurrent(current)
         let controller = makeController(current, transcript: [])
-        if channel.kind == .worktree, let setup = pool.worktreeSetup, !setup.isEmpty {
-            let preparer = WorktreePreparer(environment: .shared)
-            let worktree = channel.url
-            let root = pool.rootURL
-            controller.pendingSetup = { await preparer.prepare(worktree, from: root, with: setup) }
-        }
+        configureWorktreeSetup(for: controller, in: pool)
         currents.insert(controller, at: 0)
-        Task { await controller.send(request.prompt) }
+        Task { await controller.send(request.prompt, images: request.images) }
         return controller
     }
 
@@ -269,6 +274,16 @@ public final class Workspace {
         return controller
     }
 
+    /// Every new worktree gets the same preparation, including branches and delegated sessions.
+    func configureWorktreeSetup(for controller: CurrentController, in pool: Pool) {
+        guard controller.current.channel.kind == .worktree,
+              let setup = pool.worktreeSetup, !setup.isEmpty else { return }
+        let preparer = WorktreePreparer(environment: .shared)
+        let worktree = controller.current.channel.url
+        let root = pool.rootURL
+        controller.pendingSetup = { await preparer.prepare(worktree, from: root, with: setup) }
+    }
+
     private func makeController(_ current: Current, transcript: [TranscriptItem]) -> CurrentController {
         let controller = CurrentController(
             current: current,
@@ -279,6 +294,10 @@ public final class Workspace {
         let git = git
         controller.snapshotter = { worktree, ref, message in
             try? await git.snapshotWorkingTree(in: worktree, ref: ref, message: message)
+        }
+        controller.snapshotChanges = { worktree, before, after in
+            guard let diff = try? await git.diff(in: worktree, from: before, to: after) else { return nil }
+            return !diff.isEmpty
         }
         controller.waitForWorktreeCleanup = { [weak self] in
             await self?.waitForWorktreeCleanup(at: current.channel.url)
@@ -346,6 +365,7 @@ public final class Workspace {
 public struct NewCurrentRequest: Sendable, Hashable {
     public var poolID: PoolID
     public var prompt: String
+    public var images: [ImageAttachment]
     public var title: String?
     public var providerID: ProviderID
     public var model: String?
@@ -358,6 +378,7 @@ public struct NewCurrentRequest: Sendable, Hashable {
     public init(
         poolID: PoolID,
         prompt: String,
+        images: [ImageAttachment] = [],
         title: String? = nil,
         providerID: ProviderID,
         model: String? = nil,
@@ -368,6 +389,7 @@ public struct NewCurrentRequest: Sendable, Hashable {
     ) {
         self.poolID = poolID
         self.prompt = prompt
+        self.images = images
         self.title = title
         self.providerID = providerID
         self.model = model

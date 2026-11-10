@@ -72,6 +72,7 @@ struct CurrentScreen: View {
         .navigationTitle(controller.current.title)
         .navigationSubtitle(controller.current.channel.branch)
         .toolbar { toolbar }
+        .transcriptLinks(relativeTo: controller.current.channel.url)
     }
 
     /// Two toolbar groups: how this Current runs (model, permissions, context), then what you can do

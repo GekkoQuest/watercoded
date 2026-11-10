@@ -8,7 +8,7 @@ struct UserMessageView: View {
     var body: some View {
         HStack {
             Spacer(minLength: Spacing.xxLarge * 2)
-            Text(text)
+            Text(MarkdownInline.plain(text))
                 .textSelection(.enabled)
                 .padding(.horizontal, Spacing.large)
                 .padding(.vertical, Spacing.medium)
@@ -36,7 +36,7 @@ struct NoticeView: View {
     let notice: Notice
 
     var body: some View {
-        Label(notice.text, systemImage: symbolName)
+        Label { Text(MarkdownInline.parse(notice.text)) } icon: { Image(systemName: symbolName) }
             .font(.callout)
             .foregroundStyle(color)
             .textSelection(.enabled)

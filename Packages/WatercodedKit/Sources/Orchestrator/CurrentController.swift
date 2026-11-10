@@ -33,6 +33,8 @@ public final class CurrentController: Identifiable {
     public nonisolated let id: CurrentID
     public internal(set) var current: Current
     public internal(set) var transcript: [TranscriptItem]
+    /// A failed read must never turn into an empty transcript written over recoverable data.
+    public internal(set) var transcriptLoadError: String?
     /// Assistant text still streaming in (not yet part of ``transcript``).
     public internal(set) var streamingText = ""
     /// Timing and token counts for the current or most recent turn.
@@ -55,6 +57,7 @@ public final class CurrentController: Identifiable {
     public internal(set) var availableCommands: [SlashCommand] = []
     /// Review comments collected in the Changes inspector, sent together as one message.
     public internal(set) var reviewComments: [ReviewComment] = []
+    public internal(set) var isSendingReview = false
 
     @ObservationIgnored let provider: (any AgentProvider)?
     @ObservationIgnored let repository: any WorkspaceRepository
@@ -69,6 +72,7 @@ public final class CurrentController: Identifiable {
 
     // Services injected by the Workspace.
     @ObservationIgnored var snapshotter: (@Sendable (URL, String, String) async -> String?)?
+    @ObservationIgnored var snapshotChanges: (@Sendable (URL, String, String?) async -> Bool?)?
     @ObservationIgnored var summarizer: (any CurrentSummarizer)?
     @ObservationIgnored var additionalDirectories: () -> [URL] = { [] }
     /// Called when the Current is archived (answers a parent still waiting on it).
@@ -89,9 +93,11 @@ public final class CurrentController: Identifiable {
     @ObservationIgnored var relayDirectory: () -> URL? = { nil }
     // Per-turn bookkeeping for the end-of-turn verification check.
     @ObservationIgnored var turnEditCount = 0
+    @ObservationIgnored var turnShellCount = 0
     @ObservationIgnored var turnChecks: [CheckResult] = []
     /// The provider's most recent checkpoint, saved on the turn when it ends.
     @ObservationIgnored var lastCheckpoint: String?
+    @ObservationIgnored var checkpointGeneration = 0
     /// The repository's check command, if one is set.
     @ObservationIgnored var verifySettings: () -> VerifySettings? = { nil }
     /// Whether Watercoded is running the repository's check right now.
@@ -118,6 +124,7 @@ public final class CurrentController: Identifiable {
                 toolItemIndex[record.callID] = index
             }
         }
+        migrateBranchCheckpointsIfNeeded()
     }
 
     public var providerDescriptor: ProviderDescriptor? {
@@ -154,11 +161,12 @@ public final class CurrentController: Identifiable {
 
     /// Whether input reached the provider, so failed async answers can keep their question card.
     func sendMessage(_ text: String, images: [ImageAttachment] = []) async -> Bool {
+        guard transcriptLoadError == nil else { return false }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !images.isEmpty else { return false }
         defer { scheduleSave() }
         if !images.isEmpty {
-            append(.userImages(count: images.count))
+            transcript.append(TranscriptItem(content: .userImages(count: images.count), images: images))
         }
         let message = trimmed.isEmpty ? "(See the attached image.)" : trimmed
         append(.user(text: message))
@@ -254,6 +262,11 @@ public final class CurrentController: Identifiable {
     /// The app is quitting: background sessions keep running (their position is saved so the app
     /// can reattach); others stop, and an interrupted turn is marked so it can be resumed.
     func prepareForQuit() async {
+        if transcriptLoadError != nil {
+            // We could not reattach this session safely. Leave its relay and recovery logs alone.
+            await flush()
+            return
+        }
         if let session, let handle = await session.relayHandle() {
             update { $0.relay = handle }
             eventTask?.cancel()
@@ -304,10 +317,15 @@ public final class CurrentController: Identifiable {
         guard !isDiscarded else { return }
         try? await repository.saveCurrent(current)
         guard !isDiscarded else { return }
-        try? await repository.saveTranscript(transcript, for: id)
+        if transcriptLoadError == nil {
+            try? await repository.saveTranscript(transcript, for: id)
+        }
     }
 
     func ensureSession(startingTurn: Bool = false) async throws -> any AgentSession {
+        if let transcriptLoadError {
+            throw AgentError.unsupported(transcriptLoadError)
+        }
         if current.restartSessionWhenIdle == true, !isTurnActive || startingTurn {
             await stopSession()
             if startingTurn {

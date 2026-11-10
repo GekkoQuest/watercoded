@@ -17,11 +17,14 @@ public struct TranscriptItem: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
     public let date: Date
     public var content: Content
+    /// Image bytes retained for previews. Older count-only transcripts decode with this field absent.
+    public var images: [ImageAttachment]?
 
-    public init(id: UUID = UUID(), date: Date = .now, content: Content) {
+    public init(id: UUID = UUID(), date: Date = .now, content: Content, images: [ImageAttachment]? = nil) {
         self.id = id
         self.date = date
         self.content = content
+        self.images = images
     }
 }
 

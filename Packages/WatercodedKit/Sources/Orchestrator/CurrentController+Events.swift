@@ -130,6 +130,9 @@ extension CurrentController {
         if record.kind == .edit, !isError {
             turnEditCount += 1
         }
+        if record.kind == .shell, !callID.hasPrefix("watercoded-") {
+            turnShellCount += 1
+        }
         if activeSubagentCalls.remove(callID) != nil {
             activity.activeSubagents = activeSubagentCalls.count
         }
@@ -152,6 +155,11 @@ extension CurrentController {
 
     private func handleCompaction(pre: Int?, post: Int?) {
         activity.compactions += 1
+        if !capabilities.contains(.branchingAcrossCompaction) {
+            checkpointGeneration += 1
+            lastCheckpoint = nil
+            invalidateBranchCheckpoints()
+        }
         let compact: (Int) -> String = { $0.formatted(.number.notation(.compactName)) }
         let detail = if let pre, let post {
             " (\(compact(pre)) → \(compact(post)) tokens)"
@@ -181,11 +189,34 @@ extension CurrentController {
         activeSubagentCalls.removeAll()
         activity.activeSubagents = 0
         update { $0.lastTurnEndedAt = .now }
-        Task { await recordTurnEnd(outcome) }
+        let edits = turnEditCount
+        let shells = turnShellCount
+        let checks = turnChecks
+        turnEditCount = 0
+        turnShellCount = 0
+        turnChecks.removeAll()
+        let snapshot = current.turnSnapshots?.last
+        let checkpoint = lastCheckpoint
+        let generation = checkpointGeneration
+        Task {
+            let changed = await recordTurnEnd(
+                outcome,
+                snapshot: snapshot,
+                checkpoint: checkpoint,
+                generation: generation
+            )
+            // Shell commands can edit, commit, or partially fail after changing files. Compare actual
+            // snapshots instead of guessing from command text. If snapshots failed, check conservatively.
+            if outcome == .completed, edits == 0, shells > 0, current.status != .settled, !isDiscarded {
+                verifyTurn(edited: changed ?? true, checks: checks)
+            }
+        }
         guard current.status != .settled else { return }
         switch outcome {
         case .completed:
-            verifyTurn()
+            if edits > 0 || shells == 0 {
+                verifyTurn(edited: edits > 0, checks: checks)
+            }
             update { $0.status = isAwaitingUser ? .waiting : .ashore }
         case .interrupted:
             append(.notice(Notice(.info, "Interrupted.")))
@@ -220,20 +251,16 @@ extension CurrentController {
 
     /// Flags turns whose result wasn't checked: edits with no test or build run, or a failing last run.
     /// Facts only, no guessing from the agent's prose.
-    private func verifyTurn() {
-        defer {
-            turnEditCount = 0
-            turnChecks.removeAll()
-        }
-        if turnEditCount > 0, let settings = verifySettings(), settings.runsAfterEdits {
+    private func verifyTurn(edited: Bool, checks: [CheckResult]) {
+        if edited, let settings = verifySettings(), settings.runsAfterEdits {
             // Watercoded checks the work itself rather than warning about what the agent did or didn't run.
             Task { await verify() }
-        } else if let last = turnChecks.last, !last.passed {
+        } else if let last = checks.last, !last.passed {
             append(.notice(Notice(.error, "The last test or build this turn failed: `\(last.command)`.")))
-        } else if turnEditCount > 0, turnChecks.isEmpty {
-            let files = turnEditCount == 1 ? "a file" : "\(turnEditCount) files"
-            append(.notice(Notice(.warning, "The agent edited \(files) but didn't run tests or a build this turn.")))
+        } else if edited, checks.isEmpty {
+            append(.notice(Notice(.warning, "The agent edited files but didn't run tests or a build this turn.")))
         }
+        scheduleSave()
     }
 
     func flushStreamingText() {

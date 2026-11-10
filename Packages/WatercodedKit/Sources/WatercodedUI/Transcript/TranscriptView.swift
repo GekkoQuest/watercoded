@@ -78,11 +78,16 @@ private struct TranscriptRow: View {
             UserMessageView(text: text)
                 .contextMenu { BranchMenuItems(controller: controller, messageID: item.id) }
         case let .userImages(count):
-            HStack {
-                Spacer()
-                Label("\(count) \(count == 1 ? "image" : "images") attached", systemImage: "photo")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if let images = item.images, !images.isEmpty {
+                ImageAttachmentsView(images: images)
+            } else {
+                HStack {
+                    Spacer()
+                    Label("\(count) \(count == 1 ? "image" : "images") attached", systemImage: "photo")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .help("This older transcript saved only the image count; previews are unavailable.")
+                }
             }
         case let .assistant(text): AssistantMessageView(text: text, isStreaming: false)
         case let .toolCall(record): ToolCallView(record: record, children: subagentCalls[record.callID] ?? [])

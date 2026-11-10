@@ -31,11 +31,19 @@ extension CurrentController {
     }
 
     /// Sends all review comments as one message, like submitting a code review.
-    public func sendReview(summary: String = "") async {
-        guard !reviewComments.isEmpty else { return }
-        let message = ReviewComment.message(for: reviewComments, summary: summary)
-        reviewComments.removeAll()
-        await send(message)
+    @discardableResult
+    public func sendReview(summary: String = "") async -> Bool {
+        guard !reviewComments.isEmpty, !isSendingReview else { return false }
+        isSendingReview = true
+        defer { isSendingReview = false }
+        let submitted = reviewComments
+        let message = ReviewComment.message(for: submitted, summary: summary)
+        if await sendMessage(message) {
+            let ids = Set(submitted.map(\.id))
+            reviewComments.removeAll { ids.contains($0.id) }
+            return true
+        }
+        return false
     }
 
     public func reopen() {

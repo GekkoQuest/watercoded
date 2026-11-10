@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// The outcome of a process that ran to completion.
@@ -57,47 +58,41 @@ public enum ProcessRunner {
         let errors = PipeCollector(stderr.fileHandleForReading)
 
         let box = ProcessBox(process)
-        let exitCode: Int32 = try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: Int32?.self) { group in
+        defer { output.finish()
+            errors.finish()
+        }
+        return try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: ProcessResult?.self) { group in
                 group.addTask {
-                    try await withCheckedThrowingContinuation { continuation in
-                        box.process.terminationHandler = { process in
-                            box.markFinished()
-                            continuation.resume(returning: process.terminationStatus)
-                        }
-                        do {
-                            try box.launch()
-                        } catch {
-                            box.process.terminationHandler = nil
-                            continuation
-                                .resume(throwing: error is CancellationError ? error : ProcessError.launchFailed(
-                                    executable: executable.lastPathComponent,
-                                    underlying: error.localizedDescription
-                                ))
-                        }
-                    }
+                    let exitCode = try await box.exitCode()
+                    // Pipe draining is part of the deadline too: a descendant can keep a pipe open
+                    // after the command itself exits.
+                    return await ProcessResult(
+                        exitCode: exitCode,
+                        standardOutput: String(decoding: output.data(), as: UTF8.self),
+                        standardError: String(decoding: errors.data(), as: UTF8.self)
+                    )
                 }
                 group.addTask {
                     try await Task.sleep(for: timeout)
                     return nil
                 }
+                defer { group.cancelAll() }
                 let first = try await group.next().flatMap(\.self)
-                group.cancelAll()
+                try Task.checkCancellation()
                 guard let first else {
                     box.terminate()
+                    output.finish()
+                    errors.finish()
                     throw ProcessError.timedOut(executable: executable.lastPathComponent)
                 }
                 return first
             }
         } onCancel: {
             box.terminate()
+            output.finish()
+            errors.finish()
         }
-
-        return await ProcessResult(
-            exitCode: exitCode,
-            standardOutput: String(decoding: output.data(), as: UTF8.self),
-            standardError: String(decoding: errors.data(), as: UTF8.self)
-        )
     }
 }
 
@@ -129,6 +124,24 @@ final class ProcessBox: @unchecked Sendable {
         state = .running
     }
 
+    func exitCode() async throws -> Int32 {
+        try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { process in
+                self.markFinished()
+                continuation.resume(returning: process.terminationStatus)
+            }
+            do {
+                try launch()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(throwing: error is CancellationError ? error : ProcessError.launchFailed(
+                    executable: process.executableURL?.lastPathComponent ?? "command",
+                    underlying: error.localizedDescription
+                ))
+            }
+        }
+    }
+
     func markFinished() {
         lock.lock()
         state = .finished
@@ -142,11 +155,26 @@ final class ProcessBox: @unchecked Sendable {
         defer { lock.unlock() }
         switch state {
         case .idle: state = .cancelled
-        case .running: if process.isRunning {
-                process.terminate()
+        case .running:
+            signal(SIGTERM)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) { [self] in
+                lock.lock()
+                defer { lock.unlock() }
+                if state == .running {
+                    signal(SIGKILL)
+                }
             }
         case .finished, .cancelled: break
         }
+    }
+
+    /// Foundation normally gives the child its own process group. Signal that group so a shell's
+    /// subprocesses stop too; never signal the app's own group if that isolation is absent.
+    private func signal(_ value: Int32) {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        let target = getpgid(pid) == pid ? -pid : pid
+        Darwin.kill(target, value)
     }
 }
 
@@ -157,23 +185,38 @@ final class PipeCollector: @unchecked Sendable {
     private var isFinished = false
     private var waiters: [CheckedContinuation<Data, Never>] = []
 
+    private let handle: FileHandle
+
     init(_ handle: FileHandle) {
+        self.handle = handle
         handle.readabilityHandler = { [self] handle in
-            let chunk = handle.availableData
-            lock.lock()
+            let chunk = (try? handle.read(upToCount: 65536)) ?? Data()
             if chunk.isEmpty {
-                handle.readabilityHandler = nil
-                isFinished = true
-                let result = buffer
-                let pending = waiters
-                waiters.removeAll()
-                lock.unlock()
-                pending.forEach { $0.resume(returning: result) }
+                finish()
             } else {
-                buffer.append(chunk)
+                lock.lock()
+                if !isFinished {
+                    buffer.append(chunk)
+                }
                 lock.unlock()
             }
         }
+    }
+
+    /// Releases pipe waiters on EOF, timeout or cancellation, even if a descendant holds a writer.
+    func finish() {
+        lock.lock()
+        guard !isFinished else { lock.unlock()
+            return
+        }
+        isFinished = true
+        let result = buffer
+        let pending = waiters
+        waiters.removeAll()
+        lock.unlock()
+        handle.readabilityHandler = nil
+        try? handle.close()
+        pending.forEach { $0.resume(returning: result) }
     }
 
     func data() async -> Data {

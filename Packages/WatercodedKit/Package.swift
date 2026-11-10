@@ -120,6 +120,7 @@ let package = Package(
         ),
         .testTarget(name: "MeniscusTests", dependencies: ["Meniscus"]),
         .testTarget(name: "DelegationTests", dependencies: ["Delegation", "WatercodedCore"]),
-        .testTarget(name: "OnDeviceIntelligenceTests", dependencies: ["OnDeviceIntelligence"])
+        .testTarget(name: "OnDeviceIntelligenceTests", dependencies: ["OnDeviceIntelligence"]),
+        .testTarget(name: "WatercodedUITests", dependencies: ["WatercodedUI"])
     ]
 )

@@ -97,6 +97,32 @@ struct BrokenPipeTests {
 
 @Suite("Process cancellation and large output")
 struct ProcessRobustnessTests {
+    @Test func `cancellation escalates for commands ignoring termination`() async throws {
+        let start = ContinuousClock.now
+        let task = Task {
+            try await ProcessRunner.run(
+                executable: URL(filePath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; sleep 2"]
+            )
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(ContinuousClock.now - start < .seconds(1))
+    }
+
+    @Test func `timeout also bounds pipe draining after the process exits`() async {
+        let start = ContinuousClock.now
+        await #expect(throws: ProcessError.self) {
+            try await ProcessRunner.run(
+                executable: URL(filePath: "/bin/sh"),
+                arguments: ["-c", "sleep 2 & exit 0"],
+                timeout: .milliseconds(100)
+            )
+        }
+        #expect(ContinuousClock.now - start < .seconds(1))
+    }
+
     @Test func `cancelling before launch never crashes`() async {
         // Regression: terminate() on an unlaunched Process raised "task not launched" and killed the app.
         let result = await Task {

@@ -27,6 +27,7 @@ enum MarkdownBlock: Hashable {
     case code(language: String?, text: String)
     case quote(String)
     case rule
+    case image(label: String, destination: URL)
 
     static func parse(_ text: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
@@ -60,6 +61,10 @@ enum MarkdownBlock: Hashable {
                 code = (language.isEmpty ? nil : language, [])
             } else if trimmed.isEmpty {
                 flushParagraph()
+            } else if let image = trimmed.wholeMatch(of: /^!\[([^\]]*)\]\((.+)\)$/),
+                      let url = URL(string: String(image.2).trimmingCharacters(in: CharacterSet(charactersIn: "<>"))) {
+                flushParagraph()
+                blocks.append(.image(label: image.1.isEmpty ? "View image" : String(image.1), destination: url))
             } else if let heading = Self.heading(trimmed) {
                 flushParagraph()
                 blocks.append(heading)
@@ -105,6 +110,7 @@ enum MarkdownBlock: Hashable {
 
 private struct BlockView: View {
     let block: MarkdownBlock
+    @Environment(\.transcriptDirectory) private var directory
 
     var body: some View {
         switch block {
@@ -139,11 +145,13 @@ private struct BlockView: View {
             .fixedSize(horizontal: false, vertical: true)
         case .rule:
             Divider().padding(.vertical, Spacing.xSmall)
+        case let .image(label, destination):
+            Link(destination: destination) { Label(label, systemImage: "photo") }
+                .help("Open image")
         }
     }
 
     private func inline(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        MarkdownInline.parse(text, directory: directory)
     }
 }

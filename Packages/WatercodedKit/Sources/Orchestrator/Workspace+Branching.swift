@@ -11,9 +11,23 @@ public enum BranchPoint: Sendable, Hashable {
 }
 
 extension Workspace {
+    /// Explains why a saved turn lost its conversation history while retaining its file snapshots.
+    public func branchingUnavailableReason(
+        _ controller: CurrentController,
+        at messageID: UUID,
+        _ point: BranchPoint
+    ) -> String? {
+        guard let (snapshot, previous) = turn(of: controller, startedBy: messageID) else { return nil }
+        let checkpoint = point == .after ? snapshot : previous
+        return checkpoint?.checkpointInvalidatedByCompaction == true
+            ? "This agent discarded the conversation at this point during compaction. Branch from a newer turn instead."
+            : nil
+    }
+
     /// Whether a session can be branched at the turn started by `messageID`.
     public func canBranch(_ controller: CurrentController, at messageID: UUID, _ point: BranchPoint) -> Bool {
-        guard controller.provider?.descriptor.capabilities.contains(.branching) == true,
+        guard controller.transcriptLoadError == nil,
+              controller.provider?.descriptor.capabilities.contains(.branching) == true,
               let (snapshot, previous) = turn(of: controller, startedBy: messageID) else { return false }
         switch point {
         case .after: return snapshot.afterCommit != nil && snapshot.checkpoint != nil
@@ -27,6 +41,9 @@ extension Workspace {
     @discardableResult
     public func branch(_ controller: CurrentController, at messageID: UUID, _ point: BranchPoint) async throws
         -> CurrentController {
+        if let reason = branchingUnavailableReason(controller, at: messageID, point) {
+            throw AgentError.unsupported(reason)
+        }
         guard let pool = pool(controller.current.poolID),
               let (snapshot, previous) = turn(of: controller, startedBy: messageID),
               canBranch(controller, at: messageID, point) else { throw WorkspaceError.cannotBranch }
@@ -61,9 +78,11 @@ extension Workspace {
         try await repository.saveCurrent(branched)
         try await repository.saveTranscript(transcript, for: branched.id)
         let copy = adopt(branched, transcript: transcript)
+        configureWorktreeSetup(for: copy, in: pool)
         if point == .before, let index = controller.transcript.firstIndex(where: { $0.id == messageID }),
            case let .user(text) = controller.transcript[index].content {
             copy.draft = text
+            copy.draftImages = Self.images(before: messageID, in: controller.transcript)
         }
         return copy
     }
@@ -84,11 +103,23 @@ extension Workspace {
     ) -> [TranscriptItem] {
         guard let start = items.firstIndex(where: { $0.id == messageID }) else { return items }
         if point == .before {
-            return Array(items[..<start])
+            return Array(items[..<messageStart(start, in: items)])
         }
         // The turn ends where the next turn's message begins.
         let starters = Set((current.turnSnapshots ?? []).compactMap(\.userMessageID))
         let end = items[(start + 1)...].firstIndex { starters.contains($0.id) } ?? items.endIndex
-        return Array(items[..<end])
+        return Array(items[..<messageStart(end, in: items)])
+    }
+
+    /// An image record immediately before a user message belongs to that same input turn.
+    static func images(before messageID: UUID, in items: [TranscriptItem]) -> [ImageAttachment] {
+        guard let index = items.firstIndex(where: { $0.id == messageID }) else { return [] }
+        let start = messageStart(index, in: items)
+        return start < index ? items[start].images ?? [] : []
+    }
+
+    private static func messageStart(_ index: Int, in items: [TranscriptItem]) -> Int {
+        guard index < items.endIndex, index > 0, case .userImages = items[index - 1].content else { return index }
+        return index - 1
     }
 }

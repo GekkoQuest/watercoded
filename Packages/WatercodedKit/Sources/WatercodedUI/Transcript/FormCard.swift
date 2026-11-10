@@ -14,6 +14,7 @@ struct FormCard: View {
     @State private var choices: [String: String] = [:]
     @State private var selections: [String: Set<String>] = [:]
     @State private var openedLink = false
+    @State private var linkFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.medium) {
@@ -55,8 +56,8 @@ struct FormCard: View {
             Text(url.host() ?? url.absoluteString).font(.callout.monospaced()).foregroundStyle(.secondary)
             HStack {
                 Button("Open Link", systemImage: "arrow.up.right.square") {
-                    NSWorkspace.shared.open(url)
-                    openedLink = true
+                    openedLink = NSWorkspace.shared.open(url)
+                    linkFailed = !openedLink
                 }
                 .buttonStyle(.glassProminent)
                 Button("Done") { Task { await controller.submitForm([:], summary: ["Link": "Opened"]) } }
@@ -64,6 +65,9 @@ struct FormCard: View {
                     .help("Continue once you've finished in the browser")
                 Spacer()
                 Button("Decline") { Task { await controller.declineForm() } }
+            }
+            if linkFailed {
+                Text("Couldn't open this link. Check the address and try again.").font(.callout).foregroundStyle(.red)
             }
         }
     }

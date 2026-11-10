@@ -12,8 +12,12 @@ struct BranchMenuItems: View {
     var body: some View {
         Button("Branch from Here", systemImage: "arrow.triangle.branch") { branch(.after) }
             .disabled(!workspace.canBranch(controller, at: messageID, .after))
+            .help(workspace
+                .branchingUnavailableReason(controller, at: messageID, .after) ?? "Start a new session from this turn")
         Button("Edit and Resend…", systemImage: "pencil") { branch(.before) }
             .disabled(!workspace.canBranch(controller, at: messageID, .before))
+            .help(workspace
+                .branchingUnavailableReason(controller, at: messageID, .before) ?? "Edit this turn in a new session")
     }
 
     private func branch(_ point: BranchPoint) {
