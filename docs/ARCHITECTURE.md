@@ -91,7 +91,10 @@ around every turn (see ADR 0007).
 Agents can run under a per-session relay so they outlive the app (ADR 0009). Providers that support it
 (`.backgroundSessions`) start through `RelayedProcess` when `SessionConfiguration.relayDirectory` is set, and implement
 `reattachSession(_:)`. `CurrentController.prepareForQuit()` saves each session's `RelayHandle` (directory and log offset),
-and `Workspace.load()` reattaches. The app binary doubles as the relay (`Watercoded --relay …`, see `App/Sources/Main.swift`).
+and `Workspace.load()` reattaches every saved relay, including idle sessions ready for review.
+Effort changes during a turn are saved for the next idle message; the running turn finishes before its agent is restarted.
+A replacement agent waits for the previous process and relay cleanup to finish before reusing its directory.
+The app binary doubles as the relay (`Watercoded --relay …`, see `App/Sources/Main.swift`).
 
 ## Shipping work
 

@@ -85,10 +85,11 @@ public final class Workspace {
         startWatchingPullRequests()
         startWatchingDelegations()
 
-        for controller in controllers
-            where controller.current.status == .flowing || controller.current.status == .waiting {
-            // Background sessions kept running: reconnect. Anything else stopped when the app quit.
-            if await !controller.reattach() {
+        for controller in controllers {
+            // Idle agents also keep running under their relay. Reattach every saved handle.
+            let wasWorking = controller.current.status == .flowing || controller.current.status == .waiting
+            let reattached = controller.current.relay != nil ? await controller.reattach() : false
+            if wasWorking, !reattached {
                 controller.update {
                     $0.status = .ashore
                     if $0.relay == nil, $0.interruptedByQuit == nil {
@@ -181,6 +182,8 @@ public final class Workspace {
     /// Removes a pool from the sidebar. Worktrees and branches stay on disk.
     public func removePool(_ id: PoolID) async {
         for controller in currents(in: id) {
+            abandonDelegation(controller.id)
+            controller.discard()
             await controller.stopSession()
             try? await repository.deleteCurrent(controller.id)
         }
@@ -291,7 +294,10 @@ public final class Workspace {
             self?.delegatedTurnEnded(controller, event)
             self?.onAttention?(controller, event)
         }
-        controller.mcpServers = { [weak self] in self?.mcpServers(for: controller) ?? [] }
+        controller.mcpServers = { [weak self, weak controller] in
+            guard let controller else { return [] }
+            return self?.mcpServers(for: controller) ?? []
+        }
         controller.onSettle = { [weak self] id in self?.abandonDelegation(id) }
         controller.approvalRules = { [weak self] in self?.pool(poolID)?.approvalRules ?? [] }
         controller.verifySettings = { [weak self] in self?.pool(poolID)?.verify }

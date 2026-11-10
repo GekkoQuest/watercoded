@@ -20,7 +20,8 @@ extension Workspace {
         let channel = current.channel
         switch scope {
         case .uncommitted:
-            return try await UnifiedDiff(parsing: git.diff(in: channel.url, against: "HEAD"))
+            let base = try await git.headCommitIfAny(in: channel.url) ?? GitClient.emptyTree
+            return try await UnifiedDiff(parsing: git.diff(in: channel.url, against: base))
         case .session:
             return try await UnifiedDiff(parsing: git.diff(in: channel.url, against: channel.baseCommit))
         case let .turn(index):
@@ -45,7 +46,7 @@ extension Workspace {
                 controller.noteFilesChanged()
                 return
             }
-            base = "HEAD"
+            base = try await git.headCommitIfAny(in: channel.url) ?? GitClient.emptyTree
         case .session: base = channel.baseCommit
         case .turn: throw AgentError.unsupported("Reverting a historical turn")
         }

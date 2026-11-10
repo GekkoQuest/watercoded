@@ -124,7 +124,10 @@ actor ClaudeCodeSession: AgentSession {
     }
 
     func terminate() async {
+        guard !detached else { return }
         channel.terminate(grace: .seconds(3))
+        // A replacement uses the same relay directory. Let the old host finish its cleanup first.
+        _ = await channel.exitCode()
     }
 
     func relayHandle() async -> RelayHandle? {

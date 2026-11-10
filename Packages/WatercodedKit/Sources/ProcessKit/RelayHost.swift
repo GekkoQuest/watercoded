@@ -116,6 +116,11 @@ public enum RelayHost {
             case RelayRecord.terminateCommand:
                 if process.isRunning {
                     process.terminate()
+                    queue.asyncAfter(deadline: .now() + 3) { [self] in
+                        if process.isRunning {
+                            kill(process.processIdentifier, SIGKILL)
+                        }
+                    }
                 }
             case RelayRecord.interruptCommand:
                 if process.isRunning {

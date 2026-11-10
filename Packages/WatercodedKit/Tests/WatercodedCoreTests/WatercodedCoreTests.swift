@@ -62,6 +62,19 @@ struct ApprovalRuleTests {
         #expect(!rule.matches(toolName: "Edit", subject: "npm test"))
     }
 
+    @Test(arguments: [
+        "npm test && touch other", "npm test; touch other", "npm test | sh",
+        "npm test $(touch other)", "npm test `touch other`", "npm test > other",
+        "npm test\ntouch other", "npm test <(touch other)", "npm test & touch other",
+        "npm test --flag=\"$(touch other)\"", "npm test \\\n touch other"
+    ])
+    func `prefix approvals require review for shell syntax`(command: String) {
+        for tool in ["Bash", "Shell"] {
+            let rule = ApprovalRule(toolName: tool, pattern: "npm test *")
+            #expect(!rule.matches(toolName: tool, subject: command))
+        }
+    }
+
     @Test func `tool-wide and exact rules`() {
         #expect(ApprovalRule(toolName: "Read").matches(toolName: "Read", subject: "/any/file"))
         let exact = ApprovalRule(toolName: "Bash", pattern: "make lint")

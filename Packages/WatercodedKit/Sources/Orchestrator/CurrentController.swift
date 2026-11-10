@@ -234,32 +234,6 @@ public final class CurrentController: Identifiable {
 
     // MARK: Lifecycle
 
-    // MARK: Settings
-
-    /// Changes permissions. Applied live when the provider supports it, otherwise on the next message.
-    public func setPermissionMode(_ mode: PermissionMode) async {
-        guard mode != current.permissionMode else { return }
-        update { $0.permissionMode = mode }
-        await applyLive { try await $0.setPermissionMode(mode) }
-        scheduleSave()
-    }
-
-    /// Changes the model (`nil` = provider default). Applied live when possible.
-    public func setModel(_ model: String?) async {
-        guard model != current.model else { return }
-        update { $0.model = model }
-        await applyLive { try await $0.setModel(model) }
-        scheduleSave()
-    }
-
-    /// Changes reasoning effort. Takes effect from the next message (the agent restarts).
-    public func setEffort(_ effort: String?) async {
-        guard effort != current.effort else { return }
-        update { $0.effort = effort }
-        await stopSession()
-        scheduleSave()
-    }
-
     // MARK: Session
 
     func stopSession() async {
@@ -270,6 +244,7 @@ public final class CurrentController: Identifiable {
         isSessionLive = false
         isTurnActive = false
         clearPendingInteractions()
+        update { $0.restartSessionWhenIdle = nil }
         if let relay = current.relay {
             update { $0.relay = nil }
             try? FileManager.default.removeItem(at: relay.url)
@@ -295,7 +270,11 @@ public final class CurrentController: Identifiable {
     /// Reconnects to a background session that kept running while the app was closed.
     /// Returns `false` (and clears the stale handle) when there's nothing to reattach to.
     func reattach() async -> Bool {
-        guard let handle = current.relay, let provider else { return false }
+        guard let handle = current.relay else { return false }
+        guard let provider else {
+            update { $0.relay = nil }
+            return false
+        }
         let hasUnread = RelayLog.records(in: handle.url).last.map { $0.end > handle.offset } ?? false
         guard RelayLog.isAlive(in: handle.url) || hasUnread else {
             update { $0.relay = nil }
@@ -322,11 +301,19 @@ public final class CurrentController: Identifiable {
         if let session, let handle = await session.relayHandle() {
             update { $0.relay = handle }
         }
+        guard !isDiscarded else { return }
         try? await repository.saveCurrent(current)
+        guard !isDiscarded else { return }
         try? await repository.saveTranscript(transcript, for: id)
     }
 
-    func ensureSession() async throws -> any AgentSession {
+    func ensureSession(startingTurn: Bool = false) async throws -> any AgentSession {
+        if current.restartSessionWhenIdle == true, !isTurnActive || startingTurn {
+            await stopSession()
+            if startingTurn {
+                isTurnActive = true
+            }
+        }
         if let session {
             return session
         }
@@ -365,24 +352,10 @@ public final class CurrentController: Identifiable {
         isSessionLive = true
         eventTask = Task { [weak self] in
             for await event in session.events {
-                guard let self else { return }
+                guard !Task.isCancelled, let self else { return }
                 handle(event)
             }
         }
-    }
-
-    /// Runs a live settings change; if the provider can't, restarts so the next message picks it up.
-    private func applyLive(_ change: (any AgentSession) async throws -> Void) async {
-        guard let session else { return }
-        if capabilities.contains(.liveSettings) {
-            do {
-                try await change(session)
-                return
-            } catch {
-                // Fall back to a restart below.
-            }
-        }
-        await stopSession()
     }
 
     /// Bookkeeping shared by approvals, plans and questions.

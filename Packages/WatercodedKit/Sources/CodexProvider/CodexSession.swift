@@ -214,10 +214,6 @@ actor CodexSession: AgentSession {
         pendingOverrides["model"] = model.flatMap { $0 == "default" ? nil : .string($0) } ?? .null
     }
 
-    func terminate() async {
-        channel.terminate(grace: .seconds(3))
-    }
-
     func relayHandle() async -> RelayHandle? {
         guard let relay, !ended else { return nil }
         return RelayHandle(directory: relay.directory.path, offset: relay.offset)
@@ -409,6 +405,15 @@ actor CodexSession: AgentSession {
             )))
         }
         continuation.finish()
+    }
+}
+
+extension CodexSession {
+    func terminate() async {
+        guard !detached else { return }
+        channel.terminate(grace: .seconds(3))
+        // A replacement uses the same relay directory. Let the old host finish its cleanup first.
+        _ = await channel.exitCode()
     }
 }
 

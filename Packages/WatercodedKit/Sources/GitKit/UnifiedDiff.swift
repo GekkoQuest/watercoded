@@ -133,14 +133,18 @@ private struct UnifiedDiffParser {
         } else if line.hasPrefix("deleted file mode") {
             file?.change = .deleted
         } else if line.hasPrefix("rename from ") {
-            file?.oldPath = String(line.dropFirst("rename from ".count))
+            file?.oldPath = GitPatchPath.decode(String(line.dropFirst("rename from ".count)))
             file?.change = .renamed
         } else if line.hasPrefix("rename to ") {
-            file?.path = String(line.dropFirst("rename to ".count))
+            file?.path = GitPatchPath.decode(String(line.dropFirst("rename to ".count)))
         } else if line.hasPrefix("Binary files ") {
             file?.isBinary = true
+        } else if line.hasPrefix("--- "), line != "--- /dev/null" {
+            file?.path = Self
+                .stripPrefix(GitPatchPath.decode(String(line.dropFirst(4)).components(separatedBy: "\t")[0]))
         } else if line.hasPrefix("+++ "), line != "+++ /dev/null" {
-            file?.path = Self.stripPrefix(String(line.dropFirst(4)))
+            file?.path = Self
+                .stripPrefix(GitPatchPath.decode(String(line.dropFirst(4)).components(separatedBy: "\t")[0]))
         }
     }
 
@@ -184,9 +188,7 @@ private struct UnifiedDiffParser {
 
     /// `diff --git a/x b/y` → `y`.
     private static func pathFromDiffHeader(_ line: String) -> String {
-        let parts = line.dropFirst("diff --git ".count).split(separator: " ", maxSplits: 1)
-        guard let last = parts.last else { return line }
-        return stripPrefix(String(last))
+        stripPrefix(GitPatchPath.destination(in: String(line.dropFirst("diff --git ".count))))
     }
 
     private static func stripPrefix(_ path: String) -> String {

@@ -97,9 +97,11 @@ extension GitClient {
 extension FileDiff {
     /// A standalone patch containing just `hunk`, suitable for `git apply`.
     public func patch(for hunk: Hunk) -> String {
-        let oldName = change == .added ? "/dev/null" : "a/\(oldPath ?? path)"
-        let newName = change == .deleted ? "/dev/null" : "b/\(path)"
-        var lines = ["diff --git a/\(oldPath ?? path) b/\(path)", "--- \(oldName)", "+++ \(newName)", hunk.header]
+        let source = GitPatchPath.encode("a/\(oldPath ?? path)")
+        let destination = GitPatchPath.encode("b/\(path)")
+        let oldName = change == .added ? "/dev/null" : source
+        let newName = change == .deleted ? "/dev/null" : destination
+        var lines = ["diff --git \(source) \(destination)", "--- \(oldName)", "+++ \(newName)", hunk.header]
         for line in hunk.lines {
             let marker = switch line.kind {
             case .context: " "

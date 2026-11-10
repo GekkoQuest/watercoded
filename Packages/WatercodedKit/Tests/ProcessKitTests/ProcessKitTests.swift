@@ -182,4 +182,25 @@ struct RelayTests {
         #expect(await second.exitCode() != -1)
         #expect(!RelayLog.isAlive(in: directory))
     }
+
+    @Test func `relay termination escalates when an agent ignores SIGTERM`() async throws {
+        let relay = try #require(Self.relayExecutable, "build the package first")
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "watercoded-stubborn-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let process = try RelayedProcess.launch(
+            relay: RelayCommand(executable: relay, arguments: []), directory: directory,
+            spec: ProcessSpec(
+                executable: URL(filePath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; echo ready; while :; do sleep 1; done"],
+                workingDirectory: FileManager.default.temporaryDirectory,
+                environment: ProcessInfo.processInfo.environment
+            )
+        )
+        var lines = process.standardOutputLines.makeAsyncIterator()
+        #expect(await next(&lines) == "ready")
+        process.terminate()
+        #expect(await process.exitCode() == SIGKILL)
+        #expect(!RelayLog.isAlive(in: directory))
+    }
 }

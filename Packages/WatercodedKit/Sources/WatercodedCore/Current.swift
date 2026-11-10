@@ -16,6 +16,8 @@ public struct Current: Identifiable, Hashable, Codable, Sendable {
     public var usage: UsageSnapshot
     /// Reasoning effort passed to the provider, if it supports one.
     public var effort: String?
+    /// Settings changed during a turn; restart the agent before the next idle send.
+    public var restartSessionWhenIdle: Bool?
     /// Where ``title`` came from; generated titles may be refreshed, user titles never are.
     public var titleSource: TitleSource?
     /// One-line description of where the work stands, refreshed after each turn.

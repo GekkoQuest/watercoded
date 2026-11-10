@@ -25,8 +25,7 @@ extension CurrentController {
             guard !isTurnActive || capabilities.contains(.queueing) else {
                 return commandError("Wait for the current turn to finish before sending a message.")
             }
-            await send(text, images: images)
-            return true
+            return await sendMessage(text, images: images)
         }
         guard supports(command) else {
             return commandError(
@@ -135,7 +134,7 @@ extension CurrentController {
             await recordTurnStart()
         }
         do {
-            let session = try await ensureSession()
+            let session = try await ensureSession(startingTurn: startsWork)
             if let summary = try await session.runCommand(command) {
                 commandNotice(summary)
             }

@@ -32,6 +32,10 @@ public struct ApprovalRule: Hashable, Codable, Sendable, Identifiable {
         guard let subject = subject?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
         if pattern.hasSuffix(" *") || pattern.hasSuffix(":*") {
             let prefix = String(pattern.dropLast(2))
+            // Prefix approvals cover simple commands only. Shell operators, expansions and
+            // redirections can execute work outside the approved prefix; ask again for those.
+            let shellSyntax = CharacterSet(charactersIn: ";&|<>$`\\(){}\n\r")
+            guard subject.rangeOfCharacter(from: shellSyntax) == nil else { return false }
             return subject == prefix || subject.hasPrefix(prefix + " ")
         }
         return subject == pattern
