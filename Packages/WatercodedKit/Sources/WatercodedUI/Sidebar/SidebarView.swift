@@ -162,6 +162,7 @@ private struct PoolHeader: View {
             .help("Start a new session in \(pool.name)")
             .accessibilityLabel("New session in \(pool.name)")
         }
+        .padding(.trailing, Spacing.medium)
         .sheet(isPresented: $isEditingFolders) { RepositorySettingsSheet(pool: pool) }
         .contextMenu {
             Button("New Session…", systemImage: "square.and.pencil") { window.beginNewCurrent(in: pool.id) }
