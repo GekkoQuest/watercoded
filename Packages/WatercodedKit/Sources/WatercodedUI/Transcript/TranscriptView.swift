@@ -55,7 +55,13 @@ struct TranscriptLayout {
     init(_ transcript: [TranscriptItem]) {
         var topLevel: [TranscriptItem] = []
         var children: [String: [ToolCallRecord]] = [:]
-        for item in transcript {
+        for (index, item) in transcript.enumerated() {
+            // Older image-only messages saved the provider's fallback prompt as user text.
+            if case let .user(text) = item.content,
+               index > 0, case .userImages = transcript[index - 1].content,
+               text.isEmpty || text == "(See the attached image.)" {
+                continue
+            }
             if case let .toolCall(record) = item.content, let parent = record.parentCallID {
                 children[parent, default: []].append(record)
             } else {
@@ -79,7 +85,12 @@ private struct TranscriptRow: View {
                 .contextMenu { BranchMenuItems(controller: controller, messageID: item.id) }
         case let .userImages(count):
             if let images = item.images, !images.isEmpty {
-                ImageAttachmentsView(images: images)
+                ImageAttachmentsView(images: images, alignment: .trailing)
+                    .contextMenu {
+                        if let messageID = attachedMessageID {
+                            BranchMenuItems(controller: controller, messageID: messageID)
+                        }
+                    }
             } else {
                 HStack {
                     Spacer()
@@ -97,6 +108,13 @@ private struct TranscriptRow: View {
         case let .question(record): QuestionCard(record: record, controller: controller)
         case let .form(record): FormCard(record: record, controller: controller)
         }
+    }
+
+    private var attachedMessageID: TranscriptItem.ID? {
+        guard let index = controller.transcript.firstIndex(where: { $0.id == item.id }),
+              index + 1 < controller.transcript.count,
+              case .user = controller.transcript[index + 1].content else { return nil }
+        return controller.transcript[index + 1].id
     }
 }
 

@@ -7,7 +7,8 @@ import WatercodedCore
 @MainActor
 @Suite("Image history")
 struct ImageHistoryTests {
-    @Test func `sent images reach the provider and remain in saved history`() async throws {
+    @Test(arguments: ["Look at this", ""])
+    func `sent images reach the provider and remain in saved history`(text: String) async throws {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "watercoded-image-history-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -27,12 +28,14 @@ struct ImageHistoryTests {
         )
         defer { controller.discard() }
         let image = ImageAttachment(mediaType: "image/png", data: Data([1, 2, 3]), filename: "screenshot.png")
-        #expect(await controller.submitPrompt("Look at this", images: [image]))
+        #expect(await controller.submitPrompt(text, images: [image]))
         #expect(await session.received?.images == [image])
+        #expect(await session.received?.text == (text.isEmpty ? "(See the attached image.)" : text))
         await controller.flush()
         let saved = try await storage.loadTranscript(for: controller.id)
         #expect(saved.first?.content == .userImages(count: 1))
         #expect(saved.first?.images == [image])
+        #expect(saved.dropFirst().first?.content == .user(text: text))
         let restored = CurrentController(current: current, transcript: saved, provider: nil, repository: storage)
         defer { restored.discard() }
         #expect(restored.transcript.first?.images == [image])

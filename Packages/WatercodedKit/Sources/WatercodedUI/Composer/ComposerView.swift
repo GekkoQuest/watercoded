@@ -33,31 +33,30 @@ struct ComposerView: View {
             if !suggestions.isEmpty {
                 SuggestionList(suggestions: suggestions, accept: accept)
             }
-            VStack(alignment: .leading, spacing: Spacing.small) {
-                if !controller.draftImages.isEmpty {
-                    ImageAttachmentsView(images: controller.draftImages) { id in
-                        controller.draftImages.removeAll { $0.id == id }
+            if !controller.draftImages.isEmpty {
+                ImageAttachmentsView(images: controller.draftImages) { id in
+                    controller.draftImages.removeAll { $0.id == id }
+                }
+                .accessibilityLabel("Attachments ready to send")
+            }
+            inputRow
+                .padding(inset)
+                .background {
+                    ComposerVessel(
+                        vessel: engine.vessel(for: controller),
+                        tint: controller.waterTint,
+                        cornerRadius: cornerRadius
+                    )
+                    .accessibilityElement()
+                    .accessibilityLabel("Context \(Int(controller.current.usage.contextFraction * 100)) percent used")
+                }
+                .overlay {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     }
                 }
-                inputRow
-            }
-            .padding(inset)
-            .background {
-                ComposerVessel(
-                    vessel: engine.vessel(for: controller),
-                    tint: controller.waterTint,
-                    cornerRadius: cornerRadius
-                )
-                .accessibilityElement()
-                .accessibilityLabel("Context \(Int(controller.current.usage.contextFraction * 100)) percent used")
-            }
-            .overlay {
-                if isDropTargeted {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                }
-            }
-            .onDrop(of: [.image, .fileURL], isTargeted: $isDropTargeted, perform: acceptDrop)
+                .onDrop(of: [.image, .fileURL], isTargeted: $isDropTargeted, perform: acceptDrop)
         }
         .background(ImagePasteMonitor(isActive: isFocused && canAttach) { images in
             for image in images {
@@ -79,6 +78,11 @@ struct ComposerView: View {
             Button("OK", role: .cancel) { attachmentError = nil }
         } message: { Text(attachmentError ?? "") }
         .onAppear { isFocused = true }
+        .onChange(of: controller.draftImages.count) { old, new in
+            if new > old {
+                isFocused = true
+            }
+        }
         .task(id: controller.id) { files = await workspace.files(for: controller.id) }
         .onChange(of: controller.draft) { old, new in
             // Text added from elsewhere (e.g. "Ask about this change") brings focus here.

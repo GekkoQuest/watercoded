@@ -154,6 +154,13 @@ private struct PoolHeader: View {
                     .help("\(count) extra \(count == 1 ? "folder" : "folders") shared with agents")
             }
             Spacer()
+            Button("New session", systemImage: "square.and.pencil") {
+                window.beginNewCurrent(in: pool.id)
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Start a new session in \(pool.name)")
+            .accessibilityLabel("New session in \(pool.name)")
         }
         .sheet(isPresented: $isEditingFolders) { RepositorySettingsSheet(pool: pool) }
         .contextMenu {

@@ -169,7 +169,7 @@ public final class CurrentController: Identifiable {
             transcript.append(TranscriptItem(content: .userImages(count: images.count), images: images))
         }
         let message = trimmed.isEmpty ? "(See the attached image.)" : trimmed
-        append(.user(text: message))
+        append(.user(text: trimmed))
         update {
             $0.status = .flowing
             $0.interruptedByQuit = nil

@@ -7,6 +7,7 @@ import WatercodedDesign
 /// The same image interactions are available before sending and in the saved transcript.
 struct ImageAttachmentsView: View {
     let images: [ImageAttachment]
+    var alignment: UnitPoint = .leading
     var remove: ((UUID) -> Void)?
     @State private var selected: ImageAttachment?
 
@@ -38,6 +39,7 @@ struct ImageAttachmentsView: View {
             .padding(Spacing.xxSmall)
         }
         .scrollIndicators(.never)
+        .defaultScrollAnchor(alignment, for: .alignment)
         .frame(height: 72)
         .sheet(item: $selected) { ImageAttachmentPreview(attachment: $0) }
     }

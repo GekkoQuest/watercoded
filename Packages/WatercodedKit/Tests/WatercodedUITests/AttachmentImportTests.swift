@@ -7,6 +7,18 @@ import WatercodedCore
 @MainActor
 @Suite("Image attachments")
 struct AttachmentImportTests {
+    @Test func `image-only messages hide fallback text without hiding captions`() {
+        let images = TranscriptItem(content: .userImages(count: 1))
+        for text in ["", "(See the attached image.)"] {
+            let message = TranscriptItem(content: .user(text: text))
+            #expect(TranscriptLayout([images, message]).topLevel == [images])
+        }
+        let caption = TranscriptItem(content: .user(text: "Check this screenshot"))
+        #expect(TranscriptLayout([images, caption]).topLevel == [images, caption])
+        let ordinaryMessage = TranscriptItem(content: .user(text: "(See the attached image.)"))
+        #expect(TranscriptLayout([ordinaryMessage]).topLevel == [ordinaryMessage])
+    }
+
     @Test func `finder image file drops and image-byte drops both load`() async throws {
         let image = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil,
