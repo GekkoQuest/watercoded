@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import ProcessKit
@@ -98,29 +99,58 @@ struct BrokenPipeTests {
 @Suite("Process cancellation and large output")
 struct ProcessRobustnessTests {
     @Test func `cancellation escalates for commands ignoring termination`() async throws {
-        let start = ContinuousClock.now
+        let ready = FileManager.default.temporaryDirectory.appending(path: "watercoded-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: ready) }
         let task = Task {
             try await ProcessRunner.run(
                 executable: URL(filePath: "/bin/sh"),
-                arguments: ["-c", "trap '' TERM; sleep 2"]
+                arguments: ["-c", "trap '' TERM; echo $$ > \"$1\"; exec /bin/sleep 30", "test", ready.path]
             )
         }
-        try await Task.sleep(for: .milliseconds(100))
+        defer { task.cancel() }
+        let pid = try await waitForPID(in: ready)
+        defer { kill(pid, SIGKILL) }
+        // Measure cancellation after startup, with room for CI scheduling. Without termination,
+        // the command runs for 30 seconds, so this still catches a broken cancellation path.
+        let start = ContinuousClock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(ContinuousClock.now - start < .seconds(1))
+        #expect(ContinuousClock.now - start < .seconds(10))
+    }
+
+    @Test func `termination kills a ready process that ignores SIGTERM`() async throws {
+        let ready = FileManager.default.temporaryDirectory.appending(path: "watercoded-kill-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: ready) }
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-c", "trap '' TERM; echo $$ > \"$1\"; exec /bin/sleep 30", "test", ready.path]
+        let box = ProcessBox(process)
+        let exit = Task { try await box.exitCode() }
+        defer { box.terminate() }
+        _ = try await waitForPID(in: ready)
+        box.terminate()
+        #expect(try await exit.value == SIGKILL)
+        #expect(process.terminationReason == .uncaughtSignal)
     }
 
     @Test func `timeout also bounds pipe draining after the process exits`() async {
+        let child = FileManager.default.temporaryDirectory.appending(path: "watercoded-pipe-\(UUID().uuidString)")
+        defer {
+            if let text = try? String(contentsOf: child, encoding: .utf8),
+               let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                kill(pid, SIGKILL)
+            }
+            try? FileManager.default.removeItem(at: child)
+        }
         let start = ContinuousClock.now
         await #expect(throws: ProcessError.self) {
             try await ProcessRunner.run(
                 executable: URL(filePath: "/bin/sh"),
-                arguments: ["-c", "sleep 2 & exit 0"],
+                arguments: ["-c", "sleep 30 & echo $! > \"$1\"; exit 0", "test", child.path],
                 timeout: .milliseconds(100)
             )
         }
-        #expect(ContinuousClock.now - start < .seconds(1))
+        #expect(ContinuousClock.now - start < .seconds(10))
     }
 
     @Test func `cancelling before launch never crashes`() async {
@@ -150,6 +180,18 @@ struct ProcessRobustnessTests {
         )
         #expect(result.standardOutput.count == 1_048_576)
         #expect(result.standardError.count == 262_144)
+    }
+
+    private func waitForPID(in file: URL) async throws -> Int32 {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while ContinuousClock.now < deadline {
+            if let text = try? String(contentsOf: file, encoding: .utf8),
+               let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return pid
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw ProcessError.timedOut(executable: "test process startup")
     }
 }
 

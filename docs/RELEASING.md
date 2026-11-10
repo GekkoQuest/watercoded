@@ -102,6 +102,9 @@ The build number must exceed the previous published release's build number. Do n
 as latest or edit signed release assets after publication. Keep release assets public; private repositories
 would require a different authenticated download setup.
 
+The ZIP and signed feed are stored directly as GitHub release assets. The workflow deliberately avoids
+a duplicate Actions artifact upload so an outage of the Actions artifact service cannot block publication.
+
 A failed workflow can be retried via workflow_dispatch with its existing tag, provided the release was
 not already published. Published versions are immutable: make a new version for corrections.
 To check a package locally before publication:

@@ -67,13 +67,7 @@ jobs:
             exit 1
           fi
           scripts/package-release.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Watercoded-${{ env.RELEASE_TAG }}
-          path: |
-            .build/release/${{ env.RELEASE_TAG }}/Watercoded-*.zip
-            .build/release/${{ env.RELEASE_TAG }}/appcast.xml
-          if-no-files-found: error
+      # GitHub Releases stores both files; a duplicate Actions artifact must not gate publication.
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
