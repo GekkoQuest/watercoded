@@ -48,7 +48,7 @@ struct ToolExpansionTests {
         try await Task.sleep(for: .milliseconds(500))
         for cycle in 0 ..< 24 {
             let button = try #require(findElement(in: host, identifier: "tool-call-\(record.callID)"))
-            #expect(button.accessibilityPerformPress())
+            #expect((button.accessibilityPerformPress?() ?? false))
             for width in [900.0, 500.0, 760.0] {
                 window.setContentSize(NSSize(width: width, height: 700))
                 controller.streamingText = "Still working. \(cycle) \(width)"
@@ -57,22 +57,21 @@ struct ToolExpansionTests {
                 try await Task.sleep(for: .milliseconds(40))
             }
             let collapse = try #require(findElement(in: host, identifier: "tool-call-\(record.callID)"))
-            #expect(collapse.accessibilityPerformPress())
+            #expect((collapse.accessibilityPerformPress?() ?? false))
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(40))
         }
         #expect(controller.transcript.count == items.count)
     }
 
-    private func findElement(in element: any NSAccessibilityProtocol, identifier: String, depth: Int = 0)
-        -> (any NSAccessibilityProtocol)? {
+    private func findElement(in element: AnyObject, identifier: String, depth: Int = 0)
+        -> (AnyObject)? {
         guard depth < 40 else { return nil }
-        if element.accessibilityIdentifier() == identifier {
+        if element.accessibilityIdentifier?() == identifier {
             return element
         }
-        for child in element.accessibilityChildren() ?? [] {
-            if let child = child as? any NSAccessibilityProtocol,
-               let match = findElement(in: child, identifier: identifier, depth: depth + 1) {
+        for child in element.accessibilityChildren?() ?? [] {
+            if let match = findElement(in: child as AnyObject, identifier: identifier, depth: depth + 1) {
                 return match
             }
         }
