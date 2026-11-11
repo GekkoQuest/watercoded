@@ -9,7 +9,7 @@ struct SearchResultsList: View {
     @Environment(WindowModel.self) private var window
 
     var body: some View {
-        let hits = workspace.search(query)
+        let hits = workspace.search(query, scope: window.searchScope)
         let grouped = Dictionary(grouping: hits, by: \.currentID)
         List {
             if hits.isEmpty {

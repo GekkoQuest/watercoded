@@ -1,4 +1,5 @@
 import Observation
+import Orchestrator
 import SwiftUI
 import WatercodedCore
 
@@ -22,6 +23,7 @@ public final class WindowModel {
     public var highlightedItem: UUID?
     /// Text in the sidebar's search field; non-empty shows results across all Currents.
     public var searchQuery = ""
+    public var searchScope: Workspace.SearchScope = .sessionNames
     public var isSearchFocused = false
 
     public init() {}

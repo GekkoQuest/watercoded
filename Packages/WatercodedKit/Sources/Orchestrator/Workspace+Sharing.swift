@@ -66,6 +66,12 @@ extension Workspace {
 
     // MARK: Search
 
+    /// Whether to find sessions by name or search their contents as well.
+    public enum SearchScope: String, CaseIterable, Sendable {
+        case sessionNames
+        case allContent
+    }
+
     public struct SearchHit: Identifiable, Hashable {
         public let currentID: CurrentID
         public let itemID: UUID?
@@ -76,7 +82,7 @@ extension Workspace {
     }
 
     /// Case-insensitive search across every Current's titles, messages and tool calls.
-    public func search(_ query: String, limit: Int = 200) -> [SearchHit] {
+    public func search(_ query: String, scope: SearchScope = .allContent, limit: Int = 200) -> [SearchHit] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         guard needle.count >= 2, limit > 0 else { return [] }
         var hits: [SearchHit] = []
@@ -94,6 +100,7 @@ extension Workspace {
                     return hits
                 }
             }
+            guard scope == .allContent else { continue }
             for item in controller.transcript {
                 let text: String? = switch item.content {
                 case let .user(text), let .assistant(text): text

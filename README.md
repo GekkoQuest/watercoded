@@ -25,7 +25,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.13). Tagged versions publish app downloads to
+> **Status:** early (v0.14). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
 > The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
 
@@ -93,7 +93,7 @@ you hover over a session. Collapsed groups are remembered across launches; searc
 
 ### Getting around
 
-- **Find anything:** search every session (⇧⌘F); export any session as Markdown; re-run it on another model.
+- **Find anything:** search session names (⇧⌘F), or choose **All content** to include conversation text and tool activity; export any session as Markdown; re-run it on another model.
 - **Bring your history:** import sessions you ran with the Claude Code or Codex CLI in a repository.
 - **Leave anytime:** Continue in Terminal resumes the session in its folder with the agent's own CLI
   (`claude --resume` or `codex resume`).

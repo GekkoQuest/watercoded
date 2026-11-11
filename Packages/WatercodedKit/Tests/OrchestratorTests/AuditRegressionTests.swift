@@ -36,6 +36,36 @@ struct AuditRegressionTests {
         #expect(f.workspace.search("UniqueRenamedTitle", limit: 0).isEmpty)
     }
 
+    @Test func `search scope separates session names from conversation and tool matches`() async throws {
+        let f = try await Fixture.make()
+        defer { f.cleanUp() }
+        let pool = try await f.workspace.addPool(at: f.repository)
+        let channel = try await WorktreeManager().makeCheckoutChannel(for: pool)
+        let message = TranscriptItem(content: .user(text: "Investigate the pancake issue"))
+        let tool = TranscriptItem(content: .toolCall(ToolCallRecord(
+            callID: "search-tool", name: "Read", kind: .read,
+            summary: "pancake.swift", input: "{}"
+        )))
+        let c = f.workspace.adopt(
+            Current(poolID: pool.id, title: "Pancake repair", providerID: "unknown", channel: channel),
+            transcript: [message, tool]
+        )
+        defer { c.discard() }
+
+        let names = f.workspace.search("  PANCAKE  ", scope: .sessionNames)
+        #expect(names.count == 1)
+        #expect(names.first?.currentID == c.id)
+        #expect(names.first?.itemID == nil)
+        #expect(f.workspace.search("Investigate", scope: .sessionNames).isEmpty)
+        #expect(f.workspace.search("pancake.swift", scope: .sessionNames).isEmpty)
+
+        let all = f.workspace.search("pancake", scope: .allContent)
+        #expect(all.map(\.itemID) == [nil, message.id, tool.id])
+        #expect(f.workspace.search("pancake", scope: .allContent, limit: 2).count == 2)
+        #expect(f.workspace.search("pancake", scope: .sessionNames, limit: 0).isEmpty)
+        #expect(f.workspace.search("p", scope: .sessionNames).isEmpty)
+    }
+
     @Test func `land first commit`() async throws {
         let f = try await Fixture.make()
         defer { f.cleanUp() }

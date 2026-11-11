@@ -13,11 +13,16 @@ struct SidebarView: View {
 
     var body: some View {
         @Bindable var window = window
-        Group {
-            if window.searchQuery.trimmingCharacters(in: .whitespaces).count >= 2 {
-                SearchResultsList(query: window.searchQuery)
-            } else {
-                currentsList
+        VStack(spacing: 0) {
+            // Keep the field outside the conditional content so switching to results doesn't
+            // recreate its editor, reset focus, or select the query that's being typed.
+            SidebarSearchField()
+            Group {
+                if window.searchQuery.trimmingCharacters(in: .whitespaces).count >= 2 {
+                    SearchResultsList(query: window.searchQuery)
+                } else {
+                    currentsList
+                }
             }
         }
         .onChange(of: window.selection) { _, selection in
@@ -26,7 +31,6 @@ struct SidebarView: View {
                 UserDefaults.standard.set(true, forKey: PoolSection.expansionKey(for: controller.current.poolID))
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { SidebarSearchField() }
         .safeAreaInset(edge: .bottom) { footer }
         .confirmationDialog(
             "Delete “\(pendingDeletion?.current.title ?? "")”?",
