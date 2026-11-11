@@ -64,14 +64,14 @@ struct ToolExpansionTests {
         #expect(controller.transcript.count == items.count)
     }
 
-    private func findElement(in element: any NSAccessibility, identifier: String, depth: Int = 0)
-        -> (any NSAccessibility)? {
+    private func findElement(in element: any NSAccessibilityProtocol, identifier: String, depth: Int = 0)
+        -> (any NSAccessibilityProtocol)? {
         guard depth < 40 else { return nil }
         if element.accessibilityIdentifier() == identifier {
             return element
         }
         for child in element.accessibilityChildren() ?? [] {
-            if let child = child as? any NSAccessibility,
+            if let child = child as? any NSAccessibilityProtocol,
                let match = findElement(in: child, identifier: identifier, depth: depth + 1) {
                 return match
             }
