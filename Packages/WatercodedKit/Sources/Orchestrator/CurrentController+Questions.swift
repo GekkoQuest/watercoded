@@ -3,6 +3,36 @@ import Foundation
 import WatercodedCore
 
 extension CurrentController {
+    /// Dismisses a question permanently. Blocking questions also interrupt the waiting turn.
+    public func cancelQuestion(_ requestID: String) async {
+        guard let question = pendingQuestions.first(where: { $0.requestID == requestID }) else { return }
+        if !question.isAsynchronous {
+            do {
+                try await session?.interrupt()
+            } catch {
+                append(.notice(Notice(.error, error.localizedDescription)))
+                return
+            }
+            if pendingQuestion?.requestID == requestID {
+                pendingQuestion = nil
+            }
+            if !isAwaitingUser, current.status == .waiting {
+                update { $0.status = isTurnActive ? .flowing : .ashore }
+            }
+        }
+        pendingAsyncQuestions.removeAll { $0.requestID == requestID }
+        if let index = transcript.lastIndex(where: {
+            if case let .question(record) = $0.content {
+                return record.requestID == requestID
+            }
+            return false
+        }), case var .question(record) = transcript[index].content {
+            record.isCancelled = true
+            transcript[index].content = .question(record)
+        }
+        scheduleSave()
+    }
+
     /// Answers the pending question (question text → chosen label or labels).
     public func answer(_ answers: [String: String], requestID: String? = nil) async {
         guard let question = pendingQuestions.first(where: { requestID == nil || $0.requestID == requestID }),

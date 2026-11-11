@@ -116,7 +116,7 @@ public final class CurrentController: Identifiable {
         self.repository = repository
         pendingAsyncQuestions = transcript.compactMap { item in
             guard case let .question(record) = item.content, record.isAsynchronous,
-                  !record.isAnswered else { return nil }
+                  !record.isAnswered, !record.isCancelled else { return nil }
             return record
         }
         for (index, item) in transcript.enumerated() {

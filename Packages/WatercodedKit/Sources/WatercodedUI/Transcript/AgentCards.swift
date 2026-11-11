@@ -140,10 +140,25 @@ struct QuestionCard: View {
                     }
                 }
             }
-            if isPending, needsSubmitButton {
-                Button("Answer") { submit() }
-                    .buttonStyle(.glassProminent)
-                    .disabled(!isComplete)
+            if record.isCancelled {
+                Label("Cancelled", systemImage: "xmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else if isPending {
+                HStack(spacing: Spacing.small) {
+                    Button("Send", action: submit)
+                        .buttonStyle(.glassProminent)
+                        .disabled(!isComplete)
+                    Button("Cancel") {
+                        isSubmitting = true
+                        Task {
+                            await controller.cancelQuestion(record.requestID)
+                            isSubmitting = false
+                        }
+                    }
+                    .buttonStyle(.glass)
+                    .help(record.isAsynchronous ? "Cancel question" : "Cancel question and stop the turn")
+                }
             }
         }
         .padding(Spacing.large)
@@ -152,7 +167,7 @@ struct QuestionCard: View {
     }
 
     private var isPending: Bool {
-        !record.isAnswered && controller.current.status != .settled
+        !record.isAnswered && !record.isCancelled && controller.current.status != .settled
             && (controller.pendingQuestion?.requestID == record.requestID
                 || controller.pendingAsyncQuestions.contains { $0.requestID == record.requestID })
     }
@@ -221,7 +236,7 @@ struct QuestionCard: View {
     }
 
     private func answer(for question: QuestionRecord.Question) -> String? {
-        if let other = otherAnswers[question.text]?.trimmingCharacters(in: .whitespaces), !other.isEmpty {
+        if let other = otherAnswers[question.text]?.trimmingCharacters(in: .whitespacesAndNewlines), !other.isEmpty {
             return other
         }
         let chosen = question.options.map(\.label).filter { selections[question.text]?.contains($0) == true }

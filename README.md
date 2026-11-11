@@ -25,7 +25,7 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.14). Tagged versions publish app downloads to
+> **Status:** early (v0.15). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
 > The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
 

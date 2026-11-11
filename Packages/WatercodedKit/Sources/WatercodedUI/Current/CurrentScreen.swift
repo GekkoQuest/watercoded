@@ -8,6 +8,7 @@ import WatercodedDesign
 struct CurrentScreen: View {
     let controller: CurrentController
     @Environment(WindowModel.self) private var window
+    @State private var isQuestionCancelHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,22 +36,35 @@ struct CurrentScreen: View {
             TranscriptView(controller: controller)
             VStack(spacing: Spacing.small) {
                 if controller.current.status != .settled, let question = controller.pendingQuestions.first {
-                    Button {
-                        window.highlightedItem = controller.transcript.first(where: {
-                            if case let .question(record) = $0.content {
-                                return record.requestID == question.requestID
-                            }
-                            return false
-                        })?.id
-                    } label: {
-                        Label(
-                            "Answer: \(question.questions.first?.text ?? "The agent has a question")",
-                            systemImage: "questionmark.bubble"
+                    HStack(spacing: Spacing.small) {
+                        Button {
+                            window.highlightedItem = controller.transcript.first(where: {
+                                if case let .question(record) = $0.content {
+                                    return record.requestID == question.requestID
+                                }
+                                return false
+                            })?.id
+                        } label: {
+                            Label(
+                                "Answer: \(question.questions.first?.text ?? "The agent has a question")",
+                                systemImage: "questionmark.bubble"
+                            )
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        CancelQuestionButton(
+                            question: question, controller: controller, isHovered: $isQuestionCancelHovered
                         )
-                        .lineLimit(1)
                     }
-                    .buttonStyle(.glass)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Spacing.medium)
+                    .padding(.vertical, Spacing.small)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Radius.small))
+                    .overlay(alignment: .topTrailing) {
+                        QuestionCancelTooltip(question: question, isVisible: isQuestionCancelHovered)
+                            .padding(.trailing, Spacing.medium)
+                    }
                 }
                 ApprovalTray(controller: controller)
                 TurnStatsBar(controller: controller)

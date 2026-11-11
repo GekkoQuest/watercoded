@@ -100,9 +100,92 @@ struct QuestionFlowTests {
         await controller.stopSession()
     }
 
+    @Test func `cancelled async questions stay dismissed across restoration and relay replay`() async throws {
+        let provider = QuestionProvider()
+        let controller = makeController(provider)
+        defer { controller.discard() }
+        let first = AgentEvent.asyncQuestionAsked(requestID: "one", questions: [.init(text: "First?", options: [])])
+        controller.handle(first)
+        controller.handle(.asyncQuestionAsked(requestID: "two", questions: [.init(text: "Second?", options: [])]))
+        await controller.cancelQuestion("one")
+        await controller.cancelQuestion("one")
+        controller.handle(first)
+        #expect(controller.pendingAsyncQuestions.map(\.requestID) == ["two"])
+        #expect(await provider.session.messages.isEmpty)
+        #expect(await provider.session.interruptCount == 0)
+
+        let transcript = try JSONDecoder().decode(
+            [TranscriptItem].self, from: JSONEncoder().encode(controller.transcript)
+        )
+        let restored = makeController(provider, transcript: transcript)
+        defer { restored.discard() }
+        #expect(restored.pendingQuestions.map(\.requestID) == ["two"])
+        guard case let .question(record) = transcript[0].content else {
+            Issue.record("Expected a saved question")
+            return
+        }
+        #expect(record.isCancelled)
+        #expect(!record.isAnswered)
+        await restored.answer(["First?": "Ignored"], requestID: "one")
+        #expect(await provider.session.messages.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func `cancelling a blocking question interrupts its turn without sending an answer`(codex: Bool) async throws {
+        let provider = QuestionProvider()
+        let controller = makeController(provider)
+        controller.session = provider.session
+        defer { controller.discard() }
+        controller.handle(.turnStarted)
+        let events: [AgentEvent]
+        if codex {
+            var translator = CodexWireTranslator()
+            events = translator.translate([
+                "id": 42, "method": "item/tool/requestUserInput", "params": [
+                    "questions": [["id": "choice", "question": "Choose?", "options": []]]
+                ]
+            ])
+        } else {
+            var translator = ClaudeWireTranslator()
+            events = translator.translate([
+                "type": "control_request", "request_id": "blocking", "request": [
+                    "subtype": "can_use_tool", "tool_name": "AskUserQuestion",
+                    "input": ["questions": [["question": "Choose?", "options": []]]]
+                ]
+            ])
+        }
+        for event in events {
+            controller.handle(event)
+        }
+        let requestID = try #require(controller.pendingQuestion?.requestID)
+        await controller.cancelQuestion(requestID)
+        #expect(controller.pendingQuestions.isEmpty)
+        #expect(!controller.isAwaitingUser)
+        #expect(await provider.session.interruptCount == 1)
+        #expect(await provider.session.rpcAnswers.isEmpty)
+        #expect(await provider.session.messages.isEmpty)
+        guard case let .question(record) = controller.transcript.last?.content else {
+            Issue.record("Expected a cancelled question")
+            return
+        }
+        #expect(record.isCancelled)
+    }
+
+    @Test func `failed cancellation leaves a blocking question actionable`() async {
+        let provider = QuestionProvider(session: QuestionSession(failsToInterrupt: true))
+        let controller = makeController(provider)
+        controller.session = provider.session
+        defer { controller.discard() }
+        controller.handle(.questionAsked(requestID: "blocking", questions: [.init(text: "Choose?", options: [])]))
+        await controller.cancelQuestion("blocking")
+        #expect(controller.pendingQuestion?.requestID == "blocking")
+        #expect(controller.isAwaitingUser)
+    }
+
     @Test func `old question transcripts still decode as blocking`() throws {
         let data = Data(#"{"requestID":"old","questions":[],"answers":null}"#.utf8)
         #expect(try !JSONDecoder().decode(QuestionRecord.self, from: data).isAsynchronous)
+        #expect(try !JSONDecoder().decode(QuestionRecord.self, from: data).isCancelled)
     }
 
     private func makeController(_ provider: QuestionProvider, transcript: [TranscriptItem] = []) -> CurrentController {
@@ -138,11 +221,14 @@ private actor QuestionSession: AgentSession {
     nonisolated let events: AsyncStream<AgentEvent>
     private let continuation: AsyncStream<AgentEvent>.Continuation
     let failsToSend: Bool
+    let failsToInterrupt: Bool
+    var interruptCount = 0
     var messages: [UserMessage] = []
     var rpcAnswers: [[String: String]] = []
 
-    init(failsToSend: Bool = false) {
+    init(failsToSend: Bool = false, failsToInterrupt: Bool = false) {
         self.failsToSend = failsToSend
+        self.failsToInterrupt = failsToInterrupt
         (events, continuation) = AsyncStream.makeStream()
     }
 
@@ -158,7 +244,13 @@ private actor QuestionSession: AgentSession {
     }
 
     func respond(to _: PermissionRequest.ID, with _: PermissionDecision) async throws {}
-    func interrupt() async throws {}
+    func interrupt() async throws {
+        if failsToInterrupt {
+            throw AgentError.sessionClosed
+        }
+        interruptCount += 1
+    }
+
     func terminate() async {
         continuation.finish()
     }

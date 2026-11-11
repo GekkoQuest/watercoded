@@ -24,6 +24,7 @@ struct SidebarView: View {
                     currentsList
                 }
             }
+            footer
         }
         .onChange(of: window.selection) { _, selection in
             // Keep this outside the list so search results can also reveal a repository.
@@ -31,7 +32,6 @@ struct SidebarView: View {
                 UserDefaults.standard.set(true, forKey: PoolSection.expansionKey(for: controller.current.poolID))
             }
         }
-        .safeAreaInset(edge: .bottom) { footer }
         .confirmationDialog(
             "Delete “\(pendingDeletion?.current.title ?? "")”?",
             isPresented: Binding(get: { pendingDeletion != nil }, set: {
@@ -137,6 +137,9 @@ struct SidebarView: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, Spacing.medium)
         .padding(.vertical, Spacing.small)
+        .overlay(alignment: .top) { Divider() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sidebar actions")
     }
 
     private func delete(_ controller: CurrentController, removingWorktree: Bool) {

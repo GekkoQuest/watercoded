@@ -30,6 +30,8 @@ against claude 2.1.319 by reading the CLI and by live sessions (`ClaudeCodeLiveT
   `ClaudeQuestionTests` exercises the real `ClaudeCodeSession` against a deterministic protocol peer: a batch of
   single-choice, multi-select and custom answers returns in `updatedInput.answers`, preserving the original
   question input and `multiSelect` flags. This test does not run inference or replace the opt-in live test.
+- Cancelling a blocking question uses the existing `interrupt` control request to stop the waiting turn;
+  it does not send an empty or invented answer. Cancelled cards remain in history with a persisted flag.
 - Ignore unknown message types and fields (`JSONValue` decoding), so new CLI versions degrade gracefully.
 
 ## Consequences

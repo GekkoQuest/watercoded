@@ -42,6 +42,9 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 - Mid-session model and permission changes are sent with the next `turn/start`.
 - Branching uses `thread/fork` through the turn's id (the translator emits it as the turn's checkpoint).
 - `request_user_input` questions show as question cards.
+- Cancelling a blocking question uses the existing `turn/interrupt` path. Cancelling an async card is
+  local dismissal only: it has no pending RPC, sends no answer and does not interrupt the agent.
+  The cancelled flag persists with the transcript so restoration and relay replay cannot reopen it.
 - `request_user_input_async` uses a different path: a completed assistant message carries `questions`, while the
   tool call itself returns only `accepted: true`. Ignoring that metadata leaves prose without an answerable card.
   This shape was observed in a 0.167.0 session and checked against its generated `ThreadItem` and

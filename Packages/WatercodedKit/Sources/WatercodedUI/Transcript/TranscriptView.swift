@@ -16,9 +16,9 @@ struct TranscriptView: View {
                     let layout = TranscriptLayout(controller.transcript)
                     ForEach(layout.topLevel) { item in
                         TranscriptRow(item: item, controller: controller, subagentCalls: layout.children)
-                            .padding(window.highlightedItem == item.id ? Spacing.small : 0)
+                            .padding(isHighlighted(item) ? Spacing.small : 0)
                             .background {
-                                if window.highlightedItem == item.id {
+                                if isHighlighted(item) {
                                     RoundedRectangle(cornerRadius: Radius.medium).fill(Color.accentColor.opacity(0.12))
                                 }
                             }
@@ -43,6 +43,15 @@ struct TranscriptView: View {
             }
             .onChange(of: controller.streamingText) { proxy.scrollTo(bottomID, anchor: .bottom) }
         }
+    }
+
+    private func isHighlighted(_ item: TranscriptItem) -> Bool {
+        // Question cards already have their own surface. The Answer shortcut should scroll to
+        // them without adding another box around the card.
+        if case .question = item.content {
+            return false
+        }
+        return window.highlightedItem == item.id
     }
 }
 

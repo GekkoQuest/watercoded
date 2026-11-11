@@ -158,6 +158,8 @@ public struct QuestionRecord: Hashable, Codable, Sendable {
     public var isAsynchronous: Bool
     /// Question text → chosen answer(s), joined with ", " for multi-select.
     public var answers: [String: String]?
+    /// A cancelled question stays in history but no longer asks for an answer.
+    public var isCancelled = false
 
     public init(
         requestID: String, questions: [Question], answers: [String: String]? = nil, isAsynchronous: Bool = false
@@ -168,7 +170,7 @@ public struct QuestionRecord: Hashable, Codable, Sendable {
         self.isAsynchronous = isAsynchronous
     }
 
-    private enum CodingKeys: String, CodingKey { case requestID, questions, answers, isAsynchronous }
+    private enum CodingKeys: String, CodingKey { case requestID, questions, answers, isAsynchronous, isCancelled }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -176,6 +178,7 @@ public struct QuestionRecord: Hashable, Codable, Sendable {
         questions = try values.decode([Question].self, forKey: .questions)
         answers = try values.decodeIfPresent([String: String].self, forKey: .answers)
         isAsynchronous = try values.decodeIfPresent(Bool.self, forKey: .isAsynchronous) ?? false
+        isCancelled = try values.decodeIfPresent(Bool.self, forKey: .isCancelled) ?? false
     }
 
     public var isAnswered: Bool {
