@@ -25,12 +25,12 @@ Run the coding agents you already use (Claude Code and Codex today, with more pr
 Drag the window and the water sloshes. Shake it and you're offered to stop the agent.
 Reduce Motion is respected: the water stays still and only the level changes. Help ▸ What the Water Means has the same list.
 
-> **Status:** early (v0.11). Tagged versions publish app downloads to
+> **Status:** early (v0.12). Tagged versions publish app downloads to
 > [GitHub Releases](https://github.com/GekkoQuest/watercoded/releases). Installed releases offer updates in the app.
 > The longer-term vision and roadmap are in [`docs/SPEC.md`](docs/SPEC.md).
 
-v0.11 adds a new-session button beside each repository in the sidebar. Draft image attachments appear
-above the prompt box, and sent images align with user messages without generated placeholder text.
+v0.12 adds an optional setting to keep your Mac awake while sessions run. Enable it in Settings → General;
+the display can still sleep, and automatic sleep resumes when all active turns finish. Applies while Watercoded is open.
 
 ## What it does
 

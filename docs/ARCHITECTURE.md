@@ -96,6 +96,12 @@ Effort changes during a turn are saved for the next idle message; the running tu
 A replacement agent waits for the previous process and relay cleanup to finish before reusing its directory.
 The app binary doubles as the relay (`Watercoded --relay …`, see `App/Sources/Main.swift`).
 
+The opt-in **Keep Mac awake while sessions run** preference holds a single IOKit idle-system-sleep
+assertion while any session has an active turn (including pauses for approval). The app-owned
+`SessionSleepPrevention` observes the workspace and preferences independently of window visibility,
+releasing the assertion when all turns finish or the preference is disabled. The display can sleep.
+This only applies while the GUI app is running; background relays do not hold this assertion.
+
 ## Shipping work
 
 `Workspace.land(_:options:)` commits the channel as the user (hooks run), then merges into the checked-out branch with

@@ -19,6 +19,7 @@ struct AppEnvironment {
     let providerStatus: ProviderStatus
     let waterEngine: WaterEngine
     let settings: AppSettings
+    let sleepPrevention: SessionSleepPrevention
 
     static func live() -> AppEnvironment {
         let registry = ProviderRegistry([
@@ -31,11 +32,13 @@ struct AppEnvironment {
         // Titles and summaries come from Apple's on-device model when Apple Intelligence is available.
         workspace.summarizer = OnDeviceSummarizer()
         workspace.delegationExecutable = Bundle.main.executableURL // serves the `delegate` MCP tool
+        let settings = AppSettings()
         return AppEnvironment(
             workspace: workspace,
             providerStatus: ProviderStatus(registry: registry),
             waterEngine: WaterEngine(),
-            settings: AppSettings()
+            settings: settings,
+            sleepPrevention: SessionSleepPrevention(workspace: workspace, settings: settings)
         )
     }
 }

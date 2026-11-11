@@ -36,6 +36,9 @@ private struct GeneralSettings: View {
             Toggle("Keep agents working after Watercoded quits", isOn: $settings.keepAgentsRunning)
                 .help("Agents run in the background and Watercoded reconnects when you open it again. "
                     + "Applies to agents started after the change.")
+            Toggle("Keep Mac awake while sessions run", isOn: $settings.keepAwakeWhileRunning)
+                .help("Prevents automatic sleep until all active turns finish, including pauses for approval. "
+                    + "The display can still sleep. Applies while Watercoded is open.")
             LabeledContent("Worktrees", value: WorktreeManager.defaultRoot.path(percentEncoded: false))
             LabeledContent("Data", value: FileWorkspaceRepository.defaultRoot.path(percentEncoded: false))
         }

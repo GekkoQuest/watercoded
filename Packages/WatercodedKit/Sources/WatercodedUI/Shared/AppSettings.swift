@@ -43,6 +43,11 @@ public final class AppSettings {
         didSet { defaults.set(keepAgentsRunning, forKey: Key.keepRunning) }
     }
 
+    /// Prevent idle system sleep while a session has an active turn and Watercoded is open.
+    public var keepAwakeWhileRunning: Bool {
+        didSet { defaults.set(keepAwakeWhileRunning, forKey: Key.keepAwake) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -60,6 +65,7 @@ public final class AppSettings {
         notificationsEnabled = defaults.bool(forKey: Key.notifications)
         dockBadgeEnabled = defaults.bool(forKey: Key.dockBadge)
         keepAgentsRunning = defaults.bool(forKey: Key.keepRunning)
+        keepAwakeWhileRunning = defaults.bool(forKey: Key.keepAwake)
     }
 
     private enum Key {
@@ -71,6 +77,7 @@ public final class AppSettings {
         static let isolate = "currents.isolateByDefault"
         static let notifications = "attention.notifications"
         static let dockBadge = "attention.dockBadge"
+        static let keepAwake = "agents.keepAwakeWhileRunning"
         static let keepRunning = "agents.keepRunningAfterQuit"
     }
 }

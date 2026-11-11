@@ -5,6 +5,18 @@ import WatercodedUI
 @MainActor
 @Suite("App preferences")
 struct AppSettingsTests {
+    @Test func `keep awake defaults to disabled and persists changes`() throws {
+        let suite = "watercoded-preferences-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        #expect(!settings.keepAwakeWhileRunning)
+        settings.keepAwakeWhileRunning = true
+        #expect(AppSettings(defaults: defaults).keepAwakeWhileRunning)
+        settings.keepAwakeWhileRunning = false
+        #expect(!AppSettings(defaults: defaults).keepAwakeWhileRunning)
+    }
+
     @Test func `background agents default to enabled and preserve an explicit opt out`() throws {
         let suite = "watercoded-preferences-test-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
