@@ -39,3 +39,15 @@ Until v0.3.0 the Claude provider never declared `.backgroundSessions`, so the co
 and agents stopped when the app quit, despite this ADR. Providers now declare the capability whenever the app gives them a
 `RelayCommand`. Codex uses the same relay (ADR 0011). The live tests `… survives detaching and keeps its pending
 approval` (Claude and Codex) cover the round trip.
+
+## Input backpressure (2026-11-11)
+A live sample showed a large followup blocked in a FIFO write while holding the lock used to
+publish output. The agent completed its turn, but the app could neither consume that completion
+nor deliver later followups. The relay was alive with unread input and no active input callback;
+the precise reason its Foundation readability callback stopped is not established.
+
+Input now uses a separate writer lock and nonblocking writes with a bounded wait. A failed write
+rejects further input on that connection, since a partial JSON line must not be joined to the next
+request. Output and liveness continue independently. The host drains its nonblocking FIFO through
+a dispatch read source. Regression coverage includes repeated reconnects with large Unicode
+messages and an intentionally undrained FIFO with concurrent output.

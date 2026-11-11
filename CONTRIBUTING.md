@@ -56,6 +56,10 @@ project.yml               XcodeGen spec
 - SwiftFormat decides style. If SwiftLint and SwiftFormat disagree, change the SwiftLint config.
 
 **Tests**
+- Do not run tests alongside the user's live Watercoded app or background sessions. `make test`
+  refuses to run while a `Watercoded` process exists. Do not bypass that guard with `swift test`;
+  use a separate test environment, or wait until the user has finished their sessions. UI tests
+  create native windows and process tests launch and terminate subprocesses.
 - `make test` runs every module's tests (duration depends on the Mac and build cache). Each module prints its own
   "Test run with N tests … passed" line, so the last line only counts the last module, not the total.
   Look for any `✘` or a non-zero exit instead. You'll also see "Executed 0 tests" from XCTest; that's expected.

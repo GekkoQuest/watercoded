@@ -44,3 +44,25 @@ informational transcript notice.
 Large generated files remain fully readable without mounting thousands of native text views.
 Users scroll within a file's preview; full-hunk copying uses the header's context menu. The UI
 bound does not truncate or alter patches used for revert operations.
+
+## Subsequent new-session crash
+The 0.15.1 crash at 04:21 on November 11 was a separate AppKit constraint-update failure.
+The system log says the window requested more constraint-update passes than it had views;
+the backtrace includes `LazyLayoutViewCache.invalidateSize` during `NSHostingView.layout`.
+The user had started another session shortly beforehand. The preceding observation measured
+roughly 210–256 MB, with a 296 MB peak, and found all 69 checked completed tool calls persisted.
+Those observations do not establish that every memory or recovery issue is resolved.
+
+The transcript's content-size observer scheduled another bottom scroll on every lazy height
+refinement, alongside automatic bottom anchoring for size changes and short-content alignment.
+Remove those competing adjustments: short content uses top alignment, and geometry requests a
+correction only when the viewport leaves the bottom. Explicit content and width changes still
+schedule following, while user scrolling and question navigation retain their opt-out.
+
+This is a mitigation for the layout feedback path, not a confirmed reproduction of the recorded
+crash. A new-session streaming test passed before the mitigation; the final UI change has not
+been executed alongside the user's live app. Future verification must use an isolated environment.
+
+The separate macOS disk-write report attributes about 2.15 GB over 1,005 seconds to the Codex
+agent process, with SQLite in its sampled stacks. It does not establish a Watercoded persistence
+loop or swap writes. No provider settings or user databases were changed for that finding.

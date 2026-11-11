@@ -29,8 +29,9 @@ struct TranscriptView: View {
         // Keep a real row anchored when wrapping changes, including inspector resizing.
         .scrollPosition($position, anchor: .bottom)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .defaultScrollAnchor(followsOutput ? .bottom : nil, for: .sizeChanges)
-        .defaultScrollAnchor(.bottom, for: .alignment)
+        // Short transcripts keep a stable origin as their first rows arrive. Bottom alignment
+        // of an estimated lazy height can repeatedly invalidate the window's constraints.
+        .defaultScrollAnchor(.top, for: .alignment)
         .onScrollPhaseChange { _, phase, context in
             isUserScrolling = phase == .interacting || phase == .decelerating
             if isUserScrolling {
@@ -40,12 +41,11 @@ struct TranscriptView: View {
         .onScrollGeometryChange(for: Bool.self) { Self.nearBottom($0) } action: { _, near in
             if isUserScrolling {
                 followsOutput = near
+            } else if !near {
+                // Only correct a departure from the bottom. Reacting to every estimated
+                // content-size change creates a scroll/layout/scroll feedback loop.
+                scheduleScroll()
             }
-        }
-        .onScrollGeometryChange(for: CGSize.self) { $0.contentSize } action: { _, _ in
-            // Lazy rows refine their estimated heights after wrapping changes. Follow the
-            // bottom through that refinement instead of retaining an obsolete pixel offset.
-            scheduleScroll()
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
             scheduleScroll()

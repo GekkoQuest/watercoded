@@ -36,7 +36,11 @@ install: ## Build Release and install in /Applications (INSTALL_DIR to override)
 	$(MAKE) build CONFIG=Release
 	@scripts/install.sh "$(DERIVED)/Build/Products/Release/Watercoded.app" "$(INSTALL_DIR)"
 
-test: ## Run the package test suite
+test: ## Run the package test suite (Watercoded must be closed)
+	@if pgrep -x Watercoded >/dev/null; then \
+		echo 'Tests stopped: Watercoded or its background sessions are running. Use an isolated test environment.' >&2; \
+		exit 1; \
+	fi
 	swift test --package-path $(PACKAGE)
 
 lint: ## Check formatting and lint rules

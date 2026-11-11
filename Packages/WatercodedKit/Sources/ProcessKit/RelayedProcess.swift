@@ -20,7 +20,11 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
     private var consumed: Int64
     private var exitStatus: Int32?
     private var exitWaiters: [CheckedContinuation<Int32, Never>] = []
+    // Input serialization must never hold the output/liveness lock across pipe I/O.
+    private let writerLock = NSLock()
     private var writer: FileHandle?
+    private var inputFailed = false
+    private static let ignoreBrokenPipes: Void = { signal(SIGPIPE, SIG_IGN) }()
     private let queue = DispatchQueue(label: "watercoded.relay.client")
 
     /// Starts a new relay in `directory` running `executable`, then attaches to it.
@@ -89,16 +93,57 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
     }
 
     public func send(line: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        guard exitStatus == nil else { return }
+        Self.ignoreBrokenPipes
+        writerLock.lock()
+        defer { writerLock.unlock() }
+        guard !hasExited, !inputFailed else {
+            throw ProcessError.launchFailed(
+                executable: "relay",
+                underlying: "The session connection has ended. Restart the session to send again."
+            )
+        }
         if writer == nil {
-            writer = FileHandle(forWritingAtPath: directory.appending(path: RelayFiles.input).path)
+            let fd = open(directory.appending(path: RelayFiles.input).path, O_WRONLY | O_NONBLOCK)
+            guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+            writer = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         }
-        guard let writer else {
-            throw ProcessError.launchFailed(executable: "relay", underlying: "the background session has ended")
+        guard let writer else { return }
+        do {
+            try writeLine(Data((line + "\n").utf8), to: writer.fileDescriptor)
+        } catch {
+            // A partial line cannot safely be followed by another request.
+            inputFailed = true
+            throw error
         }
-        try writer.write(contentsOf: Data((line + "\n").utf8))
+    }
+
+    private func writeLine(_ data: Data, to fd: Int32) throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        try data.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress else { return }
+            var sent = 0
+            while sent < bytes.count {
+                let count = write(fd, base.advanced(by: sent), bytes.count - sent)
+                if count > 0 {
+                    sent += count
+                    continue
+                }
+                if count < 0, errno == EINTR {
+                    continue
+                }
+                guard count < 0, errno == EAGAIN else {
+                    throw POSIXError(.init(rawValue: errno) ?? .EIO)
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw ProcessError.launchFailed(
+                        executable: "relay",
+                        underlying: "The session stopped accepting messages. Restart it and resend your message."
+                    )
+                }
+                var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                _ = poll(&descriptor, 1, 100)
+            }
+        }
     }
 
     public func closeInput() {}
@@ -120,10 +165,10 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
             livenessTimer?.cancel()
             livenessTimer = nil
         }
-        lock.lock()
+        writerLock.lock()
         try? writer?.close()
         writer = nil
-        lock.unlock()
+        writerLock.unlock()
     }
 
     public func exitCode() async -> Int32 {

@@ -36,6 +36,8 @@ public enum RelayHost {
         private let stdout = Pipe()
         private let stderr = Pipe()
         private var input: FileHandle?
+        private var inputSource: (any DispatchSourceRead)?
+        private let inputQueue = DispatchQueue(label: "watercoded.relay.input")
 
         init(directory: URL) throws {
             self.directory = directory
@@ -58,7 +60,7 @@ public enum RelayHost {
             unlink(fifo.path)
             guard mkfifo(fifo.path, 0o600) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
             // Read-write keeps the pipe open between clients, so a client leaving isn't end-of-input.
-            let fd = open(fifo.path, O_RDWR)
+            let fd = open(fifo.path, O_RDWR | O_NONBLOCK)
             guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
             let input = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             self.input = input
@@ -93,12 +95,7 @@ public enum RelayHost {
                     append(RelayRecord.metaLine("stderr", ["line": line]))
                 }
             }
-            let inputSplitter = LineSplitter()
-            input.readabilityHandler = { [self] handle in
-                for line in inputSplitter.append(handle.availableData) {
-                    handleInput(line)
-                }
-            }
+            startReadingInput(fd)
 
             // Mark the relay alive before the agent starts, so nobody can see output from a relay that looks dead.
             let pidFile = directory.appending(path: RelayFiles.pid)
@@ -109,6 +106,28 @@ public enum RelayHost {
                 try? FileManager.default.removeItem(at: pidFile)
                 throw error
             }
+        }
+
+        private func startReadingInput(_ fd: Int32) {
+            // Drain the FIFO explicitly across client reconnections instead of depending on
+            // Foundation readability callbacks to keep making progress on a large request.
+            let inputSplitter = LineSplitter()
+            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: inputQueue)
+            source.setEventHandler { [self] in
+                var bytes = [UInt8](repeating: 0, count: 65536)
+                while true {
+                    let count = read(fd, &bytes, bytes.count)
+                    if count < 0, errno == EINTR {
+                        continue
+                    }
+                    guard count > 0 else { return }
+                    for line in inputSplitter.append(Data(bytes.prefix(count))) {
+                        handleInput(line)
+                    }
+                }
+            }
+            inputSource = source
+            source.resume()
         }
 
         private func handleInput(_ line: String) {
