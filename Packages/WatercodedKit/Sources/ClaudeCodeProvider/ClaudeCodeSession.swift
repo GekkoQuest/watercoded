@@ -14,6 +14,7 @@ actor ClaudeCodeSession: AgentSession {
     private var translator = ClaudeWireTranslator()
     private var requestCounter = 0
     private var recentStandardError: [String] = []
+    private var relayEvents: [AgentEvent]?
     private var ended = false
     private var detached = false
 
@@ -26,7 +27,12 @@ actor ClaudeCodeSession: AgentSession {
     ) async throws -> ClaudeCodeSession {
         let session: ClaudeCodeSession
         if let relay, let relayDirectory {
-            let process = try RelayedProcess.launch(relay: relay, directory: relayDirectory, spec: spec)
+            let process = try RelayedProcess.launch(
+                relay: relay,
+                directory: relayDirectory,
+                spec: spec,
+                tracksOutput: true
+            )
             session = ClaudeCodeSession(channel: process, relay: process)
         } else {
             let process = try LineStreamingProcess(
@@ -47,7 +53,7 @@ actor ClaudeCodeSession: AgentSession {
     /// their inputs, the task list, whether a turn is running), publishes that state once, then
     /// continues live from where the app stopped reading.
     static func reattach(_ handle: RelayHandle) async throws -> ClaudeCodeSession {
-        let process = try RelayedProcess(directory: handle.url, offset: handle.offset)
+        let process = try RelayedProcess(directory: handle.url, offset: handle.offset, tracksOutput: true)
         let session = ClaudeCodeSession(channel: process, relay: process)
         await session.catchUp(through: handle.offset, in: handle.url)
         try await session.start(initialize: false)
@@ -64,9 +70,15 @@ actor ClaudeCodeSession: AgentSession {
         if initialize {
             try write(ClaudeControlMessages.initialize(requestID: nextRequestID()))
         }
-        Task { [weak self, channel] in
-            for await line in channel.standardOutputLines {
-                await self?.receive(line: line)
+        Task { [weak self, channel, relay] in
+            if let relay {
+                for await record in relay.outputRecords {
+                    await self?.receive(record, directory: relay.directory)
+                }
+            } else {
+                for await line in channel.standardOutputLines {
+                    await self?.receive(line: line)
+                }
             }
             let code = await channel.exitCode()
             await self?.finish(exitCode: code)
@@ -82,7 +94,7 @@ actor ClaudeCodeSession: AgentSession {
 
     func send(_ message: UserMessage) async throws {
         guard !ended else { throw AgentError.sessionClosed }
-        continuation.yield(.turnStarted)
+        emit(.turnStarted)
         try write(ClaudeControlMessages.userMessage(message.text, images: message.images))
     }
 
@@ -152,7 +164,7 @@ actor ClaudeCodeSession: AgentSession {
         var latest: [String: AgentEvent] = [:] // newest event of each kind worth restoring
         var turnActive = false
 
-        for (record, end) in RelayLog.records(in: directory) where end <= offset {
+        for (record, _) in RelayLog.sequence(in: directory, upTo: offset) {
             switch record {
             case let .output(line):
                 guard let message = try? JSONValue(parsing: line) else { continue }
@@ -192,25 +204,43 @@ actor ClaudeCodeSession: AgentSession {
 
         for key in ["session", "environment", "commands", "usage", "planUsage", "tasks"] {
             if let event = latest[key] {
-                continuation.yield(event)
+                emit(event)
             }
         }
         if turnActive {
-            continuation.yield(.turnStarted)
+            emit(.turnStarted)
         }
         for id in order {
             if let event = pending.removeValue(forKey: id) {
-                continuation.yield(event)
+                emit(event)
             }
         }
     }
 
     // MARK: Internals
 
+    private func emit(_ event: AgentEvent) {
+        if relayEvents != nil {
+            relayEvents?.append(event)
+        } else {
+            continuation.yield(event)
+        }
+    }
+
+    private func receive(_ record: RelayOutput, directory: URL) {
+        relayEvents = []
+        receive(line: record.line)
+        let events = relayEvents ?? []
+        relayEvents = nil
+        continuation.yield(.relayBatch(
+            events: events, checkpoint: RelayHandle(directory: directory.path, offset: record.offset)
+        ))
+    }
+
     private func receive(line: String) {
         guard !line.isEmpty, let message = try? JSONValue(parsing: line) else { return }
         for event in translator.translate(message) {
-            continuation.yield(event)
+            emit(event)
         }
     }
 
@@ -225,10 +255,10 @@ actor ClaudeCodeSession: AgentSession {
         guard !ended, !detached else { return }
         ended = true
         if exitCode == 0 || exitCode == SIGTERM || exitCode == SIGKILL {
-            continuation.yield(.sessionEnded(.exited(code: exitCode)))
+            emit(.sessionEnded(.exited(code: exitCode)))
         } else {
             let detail = recentStandardError.suffix(5).joined(separator: "\n")
-            continuation.yield(.sessionEnded(.failed(
+            emit(.sessionEnded(.failed(
                 message: detail.isEmpty ? "claude exited with status \(exitCode)." : detail
             )))
         }

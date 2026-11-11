@@ -33,6 +33,8 @@ public enum Metrics {
     public static let suggestionVisibleRows = 8
     public static let suggestionRowHeight: CGFloat = 30
     public static let readableWidth: CGFloat = 760
+    public static let diffPreviewMaxHeight: CGFloat = 360
+    public static let diffPreviewRowHeight: CGFloat = 20
 }
 
 extension Color {

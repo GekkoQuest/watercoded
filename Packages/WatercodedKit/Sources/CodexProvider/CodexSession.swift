@@ -16,6 +16,7 @@ actor CodexSession: AgentSession {
     private var nextID = 0
     private var responses: [Int: CheckedContinuation<JSONValue, any Error>] = [:]
     private var recentStandardError: [String] = []
+    private var relayEvents: [AgentEvent]?
     private var ended = false
     /// Settings changed mid-session, applied with the next `turn/start`.
     private var pendingOverrides: [String: JSONValue] = [:]
@@ -31,7 +32,7 @@ actor CodexSession: AgentSession {
     ) async throws -> CodexSession {
         let session: CodexSession
         if let relay, let directory = configuration.relayDirectory {
-            let process = try RelayedProcess.launch(relay: relay, directory: directory, spec: spec)
+            let process = try RelayedProcess.launch(relay: relay, directory: directory, spec: spec, tracksOutput: true)
             session = CodexSession(channel: process, relay: process, configuration: configuration)
         } else {
             let process = try LineStreamingProcess(
@@ -57,7 +58,7 @@ actor CodexSession: AgentSession {
     /// and plan, and whether a turn is running; publishes that state once, then continues live. The app
     /// server still holds the thread, so no `thread/resume` is needed.
     static func reattach(_ handle: RelayHandle) async throws -> CodexSession {
-        let process = try RelayedProcess(directory: handle.url, offset: handle.offset)
+        let process = try RelayedProcess(directory: handle.url, offset: handle.offset, tracksOutput: true)
         let placeholder = SessionConfiguration(workingDirectory: FileManager.default.temporaryDirectory)
         let session = CodexSession(channel: process, relay: process, configuration: placeholder)
         await session.catchUp(through: handle.offset, in: handle.url)
@@ -75,9 +76,15 @@ actor CodexSession: AgentSession {
     }
 
     private func start(handshake: Bool) async throws {
-        Task { [weak self, channel] in
-            for await line in channel.standardOutputLines {
-                await self?.receive(line: line)
+        Task { [weak self, channel, relay] in
+            if let relay {
+                for await record in relay.outputRecords {
+                    await self?.receive(record, directory: relay.directory)
+                }
+            } else {
+                for await line in channel.standardOutputLines {
+                    await self?.receive(line: line)
+                }
             }
             let code = await channel.exitCode()
             await self?.finish(exitCode: code)
@@ -93,7 +100,7 @@ actor CodexSession: AgentSession {
         let open = CodexRequests.openThread(configuration)
         let result = try await request(open.method, open.params)
         for event in translator.threadOpened(result) {
-            continuation.yield(event)
+            emit(event)
         }
     }
 
@@ -116,7 +123,7 @@ actor CodexSession: AgentSession {
 
     private func startTurn(threadID: String, input: JSONValue) async throws {
         for event in translator.turnRequested() {
-            continuation.yield(event)
+            emit(event)
         }
         var parameters: [String: JSONValue] = ["threadId": .string(threadID), "input": input]
         if let effort = configuration.effort {
@@ -230,12 +237,163 @@ actor CodexSession: AgentSession {
 
     // MARK: Reattaching
 
+    // MARK: JSON-RPC
+
+    private func request(_ method: String, _ params: JSONValue) async throws -> JSONValue {
+        nextID += 1
+        let id = nextID
+        let message: JSONValue = ["id": .number(Double(id)), "method": .string(method), "params": params]
+        return try await withCheckedThrowingContinuation { continuation in
+            responses[id] = continuation
+            do {
+                try channel.send(line: message.compactString())
+            } catch {
+                responses[id] = nil
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func notify(_ method: String) throws {
+        try channel.send(line: JSONValue.object(["method": .string(method)]).compactString())
+    }
+
+    private func reply(to id: JSONValue, result: JSONValue) throws {
+        try channel.send(line: JSONValue.object(["id": id, "result": result]).compactString())
+    }
+
+    private func replyError(to id: JSONValue, message: String) throws {
+        let error: JSONValue = ["code": -32601, "message": .string(message)]
+        try channel.send(line: JSONValue.object(["id": id, "error": error]).compactString())
+    }
+
+    private func emit(_ event: AgentEvent) {
+        if relayEvents != nil {
+            relayEvents?.append(event)
+        } else {
+            continuation.yield(event)
+        }
+    }
+
+    private func receive(_ record: RelayOutput, directory: URL) {
+        relayEvents = []
+        receive(line: record.line)
+        let events = relayEvents ?? []
+        relayEvents = nil
+        continuation.yield(.relayBatch(
+            events: events, checkpoint: RelayHandle(directory: directory.path, offset: record.offset)
+        ))
+    }
+
+    private func receive(line: String) {
+        guard !line.isEmpty, let message = try? JSONValue(parsing: line) else { return }
+        if message["method"] == nil, let id = message["id"]?.int {
+            // A response to one of our requests.
+            guard let waiting = responses.removeValue(forKey: id) else { return }
+            if let error = message["error"] {
+                waiting.resume(throwing: CodexError.request(error["message"]?.string ?? error.compactString()))
+            } else {
+                waiting.resume(returning: message["result"] ?? .null)
+            }
+            return
+        }
+        if let method = message["method"]?.string, let id = message["id"],
+           !CodexWireTranslator.handlesServerRequest(method) {
+            // Questions, MCP elicitations and the like aren't supported yet: decline so the turn continues.
+            try? replyError(to: id, message: "Watercoded doesn't support \(method) yet.")
+            emit(.notice(Notice(
+                .info,
+                "Codex asked for something Watercoded can't show yet (\(method))."
+            )))
+            return
+        }
+        let events = translator.translate(message)
+        if message["method"]?.string == "mcpServer/elicitation/request", events.isEmpty, let id = message["id"] {
+            // A kind of request Watercoded can't show (e.g. a verification challenge): decline it.
+            try? reply(to: id, result: CodexRequests.formResponse(.decline))
+            emit(.notice(Notice(
+                .info,
+                "An MCP server asked for something Watercoded can't show yet, so it was declined."
+            )))
+            return
+        }
+        for event in events {
+            if configuration.permissionMode == .fullAccess, case let .permissionRequested(request) = event,
+               let approval = translator.consumeApproval(request.id) {
+                // Full Access: approve whatever Codex asks for, without showing it.
+                try? reply(to: approval.rpcID, result: CodexRequests.approvalResponse(.allow, kind: approval.kind))
+                continue
+            }
+            emit(event)
+        }
+    }
+
+    private func recordStandardError(_ line: String) {
+        recentStandardError.append(line)
+        if recentStandardError.count > 20 {
+            recentStandardError.removeFirst()
+        }
+    }
+
+    private func finish(exitCode: Int32) {
+        guard !ended, !detached else { return }
+        ended = true
+        for waiting in responses.values {
+            waiting.resume(throwing: AgentError.sessionClosed)
+        }
+        responses.removeAll()
+        if exitCode == 0 || exitCode == SIGTERM || exitCode == SIGKILL {
+            emit(.sessionEnded(.exited(code: exitCode)))
+        } else {
+            let detail = recentStandardError.suffix(5).joined(separator: "\n")
+            emit(.sessionEnded(.failed(
+                message: detail.isEmpty ? "codex exited with status \(exitCode)." : detail
+            )))
+        }
+        continuation.finish()
+    }
+}
+
+extension CodexSession {
+    func terminate() async {
+        guard !detached else { return }
+        channel.terminate(grace: .seconds(3))
+        // A replacement uses the same relay directory. Let the old host finish its cleanup first.
+        _ = await channel.exitCode()
+    }
+}
+
+enum CodexError: Error, LocalizedError {
+    case request(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .request(message): "Codex: \(message)"
+        }
+    }
+}
+
+extension AgentEvent {
+    /// Which piece of restored state this event carries after reattaching, if any.
+    fileprivate var restoreKey: String? {
+        switch self {
+        case .sessionStarted: "session"
+        case .environmentReported: "environment"
+        case .usageUpdated: "usage"
+        case .planUsageUpdated: "planUsage"
+        case .tasksUpdated: "tasks"
+        default: nil
+        }
+    }
+}
+
+extension CodexSession {
     private func catchUp(through offset: Int64, in directory: URL) {
         var latest: [String: AgentEvent] = [:] // newest event of each kind worth restoring
         var pending: [String: AgentEvent] = [:]
         var order: [String] = []
 
-        for (record, end) in RelayLog.records(in: directory) where end <= offset {
+        for (record, _) in RelayLog.sequence(in: directory, upTo: offset) {
             switch record {
             case let .output(line):
                 guard let message = try? JSONValue(parsing: line) else { continue }
@@ -274,15 +432,15 @@ actor CodexSession: AgentSession {
 
         for key in ["session", "environment", "usage", "planUsage", "tasks"] {
             if let event = latest[key] {
-                continuation.yield(event)
+                emit(event)
             }
         }
         if translator.isTurnActive {
-            continuation.yield(.turnStarted)
+            emit(.turnStarted)
         }
         for id in order {
             if let event = pending.removeValue(forKey: id) {
-                continuation.yield(event)
+                emit(event)
             }
         }
     }
@@ -306,137 +464,6 @@ actor CodexSession: AgentSession {
             return requestID
         default:
             return nil
-        }
-    }
-
-    // MARK: JSON-RPC
-
-    private func request(_ method: String, _ params: JSONValue) async throws -> JSONValue {
-        nextID += 1
-        let id = nextID
-        let message: JSONValue = ["id": .number(Double(id)), "method": .string(method), "params": params]
-        return try await withCheckedThrowingContinuation { continuation in
-            responses[id] = continuation
-            do {
-                try channel.send(line: message.compactString())
-            } catch {
-                responses[id] = nil
-                continuation.resume(throwing: error)
-            }
-        }
-    }
-
-    private func notify(_ method: String) throws {
-        try channel.send(line: JSONValue.object(["method": .string(method)]).compactString())
-    }
-
-    private func reply(to id: JSONValue, result: JSONValue) throws {
-        try channel.send(line: JSONValue.object(["id": id, "result": result]).compactString())
-    }
-
-    private func replyError(to id: JSONValue, message: String) throws {
-        let error: JSONValue = ["code": -32601, "message": .string(message)]
-        try channel.send(line: JSONValue.object(["id": id, "error": error]).compactString())
-    }
-
-    private func receive(line: String) {
-        guard !line.isEmpty, let message = try? JSONValue(parsing: line) else { return }
-        if message["method"] == nil, let id = message["id"]?.int {
-            // A response to one of our requests.
-            guard let waiting = responses.removeValue(forKey: id) else { return }
-            if let error = message["error"] {
-                waiting.resume(throwing: CodexError.request(error["message"]?.string ?? error.compactString()))
-            } else {
-                waiting.resume(returning: message["result"] ?? .null)
-            }
-            return
-        }
-        if let method = message["method"]?.string, let id = message["id"],
-           !CodexWireTranslator.handlesServerRequest(method) {
-            // Questions, MCP elicitations and the like aren't supported yet: decline so the turn continues.
-            try? replyError(to: id, message: "Watercoded doesn't support \(method) yet.")
-            continuation.yield(.notice(Notice(
-                .info,
-                "Codex asked for something Watercoded can't show yet (\(method))."
-            )))
-            return
-        }
-        let events = translator.translate(message)
-        if message["method"]?.string == "mcpServer/elicitation/request", events.isEmpty, let id = message["id"] {
-            // A kind of request Watercoded can't show (e.g. a verification challenge): decline it.
-            try? reply(to: id, result: CodexRequests.formResponse(.decline))
-            continuation.yield(.notice(Notice(
-                .info,
-                "An MCP server asked for something Watercoded can't show yet, so it was declined."
-            )))
-            return
-        }
-        for event in events {
-            if configuration.permissionMode == .fullAccess, case let .permissionRequested(request) = event,
-               let approval = translator.consumeApproval(request.id) {
-                // Full Access: approve whatever Codex asks for, without showing it.
-                try? reply(to: approval.rpcID, result: CodexRequests.approvalResponse(.allow, kind: approval.kind))
-                continue
-            }
-            continuation.yield(event)
-        }
-    }
-
-    private func recordStandardError(_ line: String) {
-        recentStandardError.append(line)
-        if recentStandardError.count > 20 {
-            recentStandardError.removeFirst()
-        }
-    }
-
-    private func finish(exitCode: Int32) {
-        guard !ended, !detached else { return }
-        ended = true
-        for waiting in responses.values {
-            waiting.resume(throwing: AgentError.sessionClosed)
-        }
-        responses.removeAll()
-        if exitCode == 0 || exitCode == SIGTERM || exitCode == SIGKILL {
-            continuation.yield(.sessionEnded(.exited(code: exitCode)))
-        } else {
-            let detail = recentStandardError.suffix(5).joined(separator: "\n")
-            continuation.yield(.sessionEnded(.failed(
-                message: detail.isEmpty ? "codex exited with status \(exitCode)." : detail
-            )))
-        }
-        continuation.finish()
-    }
-}
-
-extension CodexSession {
-    func terminate() async {
-        guard !detached else { return }
-        channel.terminate(grace: .seconds(3))
-        // A replacement uses the same relay directory. Let the old host finish its cleanup first.
-        _ = await channel.exitCode()
-    }
-}
-
-enum CodexError: Error, LocalizedError {
-    case request(String)
-
-    var errorDescription: String? {
-        switch self {
-        case let .request(message): "Codex: \(message)"
-        }
-    }
-}
-
-extension AgentEvent {
-    /// Which piece of restored state this event carries after reattaching, if any.
-    fileprivate var restoreKey: String? {
-        switch self {
-        case .sessionStarted: "session"
-        case .environmentReported: "environment"
-        case .usageUpdated: "usage"
-        case .planUsageUpdated: "planUsage"
-        case .tasksUpdated: "tasks"
-        default: nil
         }
     }
 }

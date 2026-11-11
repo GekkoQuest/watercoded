@@ -79,11 +79,15 @@ public final class Workspace {
         for current in stored.sorted(by: { $0.updatedAt > $1.updatedAt }) {
             do {
                 let transcript = try await repository.loadTranscript(for: current.id)
-                controllers.append(makeController(current, transcript: transcript))
+                let controller = makeController(current, transcript: transcript)
+                controller.savedTranscriptRevision = 0
+                controller.streamingText = try await repository.loadStreamingText(for: current.id)
+                controllers.append(controller)
             } catch {
                 let controller = makeController(current, transcript: [])
                 controller.transcriptLoadError = "Couldn't load this session's transcript. The original file has been "
-                    + "kept unchanged. Quit Watercoded and restore transcript.json from a backup, then reopen the app. "
+                    + "kept unchanged. Quit Watercoded and restore the transcript file from a backup, "
+                    + "then reopen the app. "
                     + error.localizedDescription
                 controller.fail(controller.transcriptLoadError ?? "Couldn't load the transcript.")
                 controllers.append(controller)

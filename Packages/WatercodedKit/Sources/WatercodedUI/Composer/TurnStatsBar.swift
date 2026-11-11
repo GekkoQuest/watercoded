@@ -9,8 +9,12 @@ struct TurnStatsBar: View {
 
     var body: some View {
         if let stats = controller.turnStats {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                line(stats, now: context.date)
+            if stats.isActive {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    line(stats, now: context.date)
+                }
+            } else {
+                line(stats, now: stats.endedAt ?? .now)
             }
         } else if let total = controller.current.outputTokens, total > 0 {
             line(nil, now: .now)

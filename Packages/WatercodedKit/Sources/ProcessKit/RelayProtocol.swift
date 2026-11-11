@@ -58,16 +58,19 @@ public enum RelayRecord: Equatable, Sendable {
 /// Reads a relay log as records, with each record's end offset.
 public enum RelayLog {
     public static func records(in directory: URL, upTo limit: Int64? = nil) -> [(record: RelayRecord, end: Int64)] {
-        guard let data = try? Data(contentsOf: directory.appending(path: RelayFiles.log)) else { return [] }
-        let bytes = limit.map { data.prefix(Int($0)) } ?? data[...]
-        var result: [(RelayRecord, Int64)] = []
-        var start = bytes.startIndex
-        while let newline = bytes[start...].firstIndex(of: UInt8(ascii: "\n")) {
-            let line = String(decoding: bytes[start ..< newline], as: UTF8.self)
-            result.append((RelayRecord(logLine: line), Int64(newline - bytes.startIndex + 1)))
-            start = bytes.index(after: newline)
-        }
-        return result
+        Array(sequence(in: directory, upTo: limit))
+    }
+
+    /// Streams a bounded prefix without materializing the entire log or reading later output.
+    public static func sequence(in directory: URL, upTo limit: Int64? = nil) -> RelayRecords {
+        RelayRecords(url: directory.appending(path: RelayFiles.log), limit: limit)
+    }
+
+    /// Checks for unread bytes without decoding the log.
+    public static func hasUnread(in directory: URL, after offset: Int64) -> Bool {
+        let attributes = try? FileManager.default
+            .attributesOfItem(atPath: directory.appending(path: RelayFiles.log).path)
+        return ((attributes?[.size] as? NSNumber)?.int64Value ?? 0) > offset
     }
 
     /// Whether the relay in `directory` is still running.
@@ -76,5 +79,49 @@ public enum RelayLog {
               let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return false }
         return kill(pid, 0) == 0
+    }
+}
+
+/// A single-pass sequence of complete relay records. Memory is bounded by a chunk and one line.
+public struct RelayRecords: Sequence, Sendable {
+    let url: URL
+    let limit: Int64?
+
+    public func makeIterator() -> Iterator {
+        Iterator(url: url, limit: limit)
+    }
+
+    public final class Iterator: IteratorProtocol {
+        private let reader: FileHandle?
+        private let limit: Int64
+        private var readBytes: Int64 = 0
+        private var consumed: Int64 = 0
+        private var buffer = Data()
+
+        fileprivate init(url: URL, limit: Int64?) {
+            reader = try? FileHandle(forReadingFrom: url)
+            self.limit = limit ?? Int64.max
+        }
+
+        deinit { try? reader?.close() }
+
+        public func next() -> (record: RelayRecord, end: Int64)? {
+            while true {
+                if let newline = buffer.firstIndex(of: 10) {
+                    let line = String(decoding: buffer[..<newline], as: UTF8.self)
+                    let count = buffer.distance(from: buffer.startIndex, to: newline) + 1
+                    buffer.removeSubrange(buffer.startIndex ... newline)
+                    consumed += Int64(count)
+                    return (RelayRecord(logLine: line), consumed)
+                }
+                guard readBytes < limit, let data = try? reader?.read(upToCount: Int(Swift.min(
+                          65536,
+                          limit - readBytes
+                      ))),
+                      !data.isEmpty else { return nil }
+                readBytes += Int64(data.count)
+                buffer.append(data)
+            }
+        }
     }
 }

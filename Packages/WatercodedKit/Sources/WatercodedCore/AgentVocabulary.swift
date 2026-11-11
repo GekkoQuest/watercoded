@@ -56,6 +56,8 @@ public struct UsageSnapshot: Hashable, Codable, Sendable {
     public var contextTokens: Int
     /// Size of the model's context window, when known.
     public var contextWindow: Int?
+    /// Authoritative cumulative output for this conversation, when the provider supplies it.
+    public var outputTokens: Int?
     /// Cumulative cost reported by the provider, in USD. For subscription plans this is only an
     /// API-list-price estimate; nothing is billed per token. Check ``billing`` before showing it.
     public var costUSD: Double
@@ -69,6 +71,7 @@ public struct UsageSnapshot: Hashable, Codable, Sendable {
     public init(
         contextTokens: Int = 0,
         contextWindow: Int? = nil,
+        outputTokens: Int? = nil,
         costUSD: Double = 0,
         billing: BillingMode? = nil,
         planUsage: PlanUsage? = nil,
@@ -76,6 +79,7 @@ public struct UsageSnapshot: Hashable, Codable, Sendable {
     ) {
         self.contextTokens = contextTokens
         self.contextWindow = contextWindow
+        self.outputTokens = outputTokens
         self.costUSD = costUSD
         self.billing = billing
         self.planUsage = planUsage

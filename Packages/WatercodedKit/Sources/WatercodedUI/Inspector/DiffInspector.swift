@@ -172,7 +172,9 @@ struct DiffInspector: View {
             let updated = try await workspace.diff(for: controller.id, scope: requestedScope)
             try Task.checkCancellation()
             guard reloadID == request, scope == requestedScope else { return }
-            diff = updated
+            if diff != updated || loadedScope != requestedScope {
+                diff = updated
+            }
             loadedScope = requestedScope
             errorMessage = nil
         } catch is CancellationError {
@@ -219,11 +221,7 @@ private struct FileDiffView: View {
             if file.isBinary {
                 Text("Binary file").foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: Spacing.small) {
-                    ForEach(Array(file.hunks.enumerated()), id: \.offset) { _, hunk in
-                        HunkView(hunk: hunk, file: file, canRevert: canRevert && file.change == .modified)
-                    }
-                }
+                DiffFileContentView(file: file, canRevert: canRevert && file.change == .modified)
             }
         } label: {
             HStack {
@@ -276,104 +274,6 @@ private struct FileDiffView: View {
         case .deleted: "minus.square"
         case .modified: "pencil"
         case .renamed: "arrow.right.square"
-        }
-    }
-}
-
-private struct HunkView: View {
-    let hunk: Hunk
-    let file: FileDiff
-    let canRevert: Bool
-    @Environment(\.diffActions) private var actions
-    @State private var isHovering = false
-    @State private var isCommenting = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Spacing.small) {
-                Text(hunk.header)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                if isHovering || isCommenting {
-                    Button("Comment", systemImage: "text.bubble") { isCommenting = true }
-                        .help("Add a review comment; send all comments together as one review")
-                        .popover(isPresented: $isCommenting) {
-                            CommentEditor(title: "Comment on lines \(file.lineRange(of: hunk))") { text in
-                                actions.comment(ReviewComment(
-                                    path: file.path, lines: file.lineRange(of: hunk), excerpt: excerpt, text: text
-                                ))
-                            }
-                        }
-                    Button("Ask", systemImage: "bubble.left") { askAboutHunk() }
-                        .help("Ask the agent about this change")
-                    if canRevert {
-                        Button("Revert", systemImage: "arrow.uturn.backward") {
-                            Task { await actions.revertHunk(hunk, file) }
-                        }
-                        .help("Undo just this change")
-                    }
-                }
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .padding(.vertical, Spacing.xxSmall)
-            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                DiffLineView(line: line)
-            }
-        }
-        .textSelection(.enabled)
-        .onHover { isHovering = $0 }
-        .contextMenu {
-            Button("Add Review Comment…", systemImage: "text.bubble") { isCommenting = true }
-            Button("Ask the Agent About This Change", systemImage: "bubble.left") { askAboutHunk() }
-            if canRevert {
-                Button("Revert This Change", systemImage: "arrow.uturn.backward") {
-                    Task { await actions.revertHunk(hunk, file) }
-                }
-            }
-        }
-    }
-
-    /// The hunk as diff text, without file headers.
-    private var excerpt: String {
-        file.patch(for: hunk).split(separator: "\n").dropFirst(3).joined(separator: "\n")
-    }
-
-    private func askAboutHunk() {
-        actions
-            .ask("About this change in `\(file.path)` (lines \(file.lineRange(of: hunk))):\n```diff\n\(excerpt)\n```\n")
-    }
-}
-
-private struct DiffLineView: View {
-    let line: DiffLine
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.small) {
-            Text(marker).foregroundStyle(color).frame(width: 10)
-            Text(line.text.isEmpty ? " " : line.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .font(.system(.caption, design: .monospaced))
-        .padding(.horizontal, Spacing.xSmall)
-        .background(color.opacity(line.kind == .context ? 0 : 0.12))
-    }
-
-    private var marker: String {
-        switch line.kind {
-        case .addition: "+"
-        case .deletion: "−"
-        case .context: " "
-        }
-    }
-
-    private var color: Color {
-        switch line.kind {
-        case .addition: .green
-        case .deletion: .red
-        case .context: .primary
         }
     }
 }

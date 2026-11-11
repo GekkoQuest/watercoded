@@ -6,6 +6,9 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
     public let standardOutputLines: AsyncStream<String>
     public let standardErrorLines: AsyncStream<String>
     public let directory: URL
+    public let outputRecords: AsyncStream<RelayOutput>
+    private let recordContinuation: AsyncStream<RelayOutput>.Continuation
+    private let tracksOutput: Bool
 
     private let outputContinuation: AsyncStream<String>.Continuation
     private let errorContinuation: AsyncStream<String>.Continuation
@@ -21,7 +24,12 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
     private let queue = DispatchQueue(label: "watercoded.relay.client")
 
     /// Starts a new relay in `directory` running `executable`, then attaches to it.
-    public static func launch(relay: RelayCommand, directory: URL, spec: ProcessSpec) throws -> RelayedProcess {
+    public static func launch(
+        relay: RelayCommand,
+        directory: URL,
+        spec: ProcessSpec,
+        tracksOutput: Bool = false
+    ) throws -> RelayedProcess {
         let executable = spec.executable
         try? FileManager.default.removeItem(at: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -49,11 +57,13 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
                 underlying: "the relay didn't start"
             )
         }
-        return try RelayedProcess(directory: directory, offset: 0)
+        return try RelayedProcess(directory: directory, offset: 0, tracksOutput: tracksOutput)
     }
 
     /// Attaches to an existing relay, delivering log lines after `offset`.
-    public init(directory: URL, offset: Int64) throws {
+    public init(directory: URL, offset: Int64, tracksOutput: Bool = false) throws {
+        self.tracksOutput = tracksOutput
+        (outputRecords, recordContinuation) = AsyncStream.makeStream(of: RelayOutput.self)
         self.directory = directory
         consumed = offset
         (standardOutputLines, outputContinuation) = AsyncStream.makeStream(of: String.self, bufferingPolicy: .unbounded)
@@ -157,9 +167,15 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
     private func deliver(_ record: RelayRecord, length: Int64) {
         lock.lock()
         consumed += length
+        let end = consumed
         lock.unlock()
         switch record {
-        case let .output(line): outputContinuation.yield(line)
+        case let .output(line):
+            if tracksOutput {
+                recordContinuation.yield(RelayOutput(line: line, offset: end))
+            } else {
+                outputContinuation.yield(line)
+            }
         case let .error(line): errorContinuation.yield(line)
         case .input: break
         case let .exited(code): finish(code)
@@ -194,6 +210,7 @@ public final class RelayedProcess: LineChannel, @unchecked Sendable {
         let waiters = exitWaiters
         exitWaiters.removeAll()
         lock.unlock()
+        recordContinuation.finish()
         outputContinuation.finish()
         errorContinuation.finish()
         waiters.forEach { $0.resume(returning: code) }
@@ -211,4 +228,10 @@ public struct RelayCommand: Sendable, Hashable {
         self.executable = executable
         self.arguments = arguments
     }
+}
+
+/// One output line and its exact replay boundary, before any later queued lines.
+public struct RelayOutput: Sendable {
+    public let line: String
+    public let offset: Int64
 }

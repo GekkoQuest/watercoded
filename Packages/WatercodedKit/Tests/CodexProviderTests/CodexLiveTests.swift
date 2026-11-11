@@ -32,7 +32,7 @@ struct CodexLiveTests {
         var reply = ""
         var outcome: TurnOutcome?
         var sessionID: String?
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .sessionStarted(info): sessionID = info.providerSessionID
             case let .messageCompleted(_, text): reply = text
@@ -65,7 +65,7 @@ struct CodexLiveTests {
         var built = false
         var buildStarted = false
         var outcome: TurnOutcome?
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .planProposed(id, markdown):
                 #expect(!markdown.isEmpty)
@@ -109,7 +109,7 @@ struct CodexLiveTests {
         ))
         try await first.send(UserMessage(text: "Run the shell command `touch made-by-codex.txt`, then reply DONE."))
         var asked: PermissionRequest?
-        for await event in first.events {
+        for await event in first.events.flatMap(unbatch) {
             if case let .permissionRequested(request) = event {
                 asked = request
                 break
@@ -122,7 +122,7 @@ struct CodexLiveTests {
         let second = try await provider.reattachSession(handle)
         var restored = false
         var outcome: TurnOutcome?
-        for await event in second.events {
+        for await event in second.events.flatMap(unbatch) {
             switch event {
             case let .permissionRequested(request):
                 restored = true
@@ -145,7 +145,7 @@ struct CodexLiveTests {
         try await second.send(UserMessage(text: "Run the shell command `touch second.txt`, then reply DONE."))
         var askedAgain = false
         var secondOutcome: TurnOutcome?
-        for await event in second.events {
+        for await event in second.events.flatMap(unbatch) {
             if case .permissionRequested = event {
                 askedAgain = true
             }
@@ -186,7 +186,7 @@ struct CodexLiveTests {
         var form: FormRecord?
         var reply = ""
         var outcome: TurnOutcome?
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .permissionRequested(request):
                 approvals += 1
@@ -226,5 +226,19 @@ struct CodexLiveTests {
         }
         return ["out/Products/Debug", "debug"].map { directory.appending(path: ".build/\($0)/watercoded-relay") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+}
+
+/// Direct provider tests inspect domain events; the app applies relay batches atomically instead.
+private func unbatch(_ event: AgentEvent) -> AsyncStream<AgentEvent> {
+    AsyncStream { continuation in
+        if case let .relayBatch(events, _) = event {
+            for event in events {
+                continuation.yield(event)
+            }
+        } else {
+            continuation.yield(event)
+        }
+        continuation.finish()
     }
 }

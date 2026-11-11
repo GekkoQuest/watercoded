@@ -5,8 +5,8 @@ import WatercodedCore
 /// Translates `codex app-server` notifications and server requests (JSON-RPC, protocol v2) into
 /// ``AgentEvent``s. Pure apart from the state it keeps; ``CodexSession`` owns the process and I/O.
 ///
-/// Verified against codex-cli 0.167.0 (see docs/adr/0011-codex-provider.md). Notably, that version
-/// never sends `turn/completed`: a turn ends when the thread's status becomes `idle`.
+/// Verified against codex-cli 0.167.0 (see docs/adr/0011-codex-provider.md). A turn can end with
+/// `turn/completed` or the thread becoming `idle`; accept either without finishing twice.
 struct CodexWireTranslator {
     /// An approval Codex is waiting on: the JSON-RPC request to answer, and what kind it is.
     struct PendingApproval: Equatable {
@@ -28,6 +28,7 @@ struct CodexWireTranslator {
     /// Whether the model is producing output right now (for tokens-per-second timing).
     private var isGenerating = false
     private var usage = UsageSnapshot()
+    private var totalOutputTokens: Int?
     private var pendingApprovals: [String: PendingApproval] = [:]
     /// File paths of in-progress file changes, so their approvals can say what they touch.
     private var fileChangePaths: [String: [String]] = [:]
@@ -337,34 +338,6 @@ struct CodexWireTranslator {
 
     // MARK: Usage and turn lifecycle
 
-    private mutating func tokenUsage(_ value: JSONValue?) -> [AgentEvent] {
-        guard let last = value?["last"] else { return [] }
-        if let window = value?["modelContextWindow"]?.int {
-            usage.contextWindow = window
-        }
-        usage.contextTokens = last["totalTokens"]?.int ?? usage.contextTokens
-        isGenerating = false
-        return [.generationFinished(outputTokens: last["outputTokens"]?.int ?? 0), .usageUpdated(usage)]
-    }
-
-    private mutating func rateLimits(_ value: JSONValue?) -> [AgentEvent] {
-        guard let value else { return [] }
-        if value["planType"]?.string != nil {
-            usage.billing = .subscription
-        }
-        let windows = ["primary", "secondary"].compactMap { key -> PlanUsage.Window? in
-            guard let window = value[key], let used = window["usedPercent"]?.double else { return nil }
-            let minutes = window["windowDurationMins"]?.int
-            return PlanUsage.Window(
-                id: key,
-                title: Self.windowTitle(minutes: minutes),
-                utilization: used / 100,
-                resetsAt: window["resetsAt"]?.double.map { Date(timeIntervalSince1970: $0) }
-            )
-        }
-        return windows.isEmpty ? [] : [.planUsageUpdated(PlanUsage(windows: windows))]
-    }
-
     private mutating func error(_ params: JSONValue) -> [AgentEvent] {
         let message = params["error"]?["message"]?.string ?? "Codex reported an error."
         if params["willRetry"]?.bool == true {
@@ -402,5 +375,45 @@ struct CodexWireTranslator {
         failure = nil
         interruptRequested = false
         return events
+    }
+}
+
+extension CodexWireTranslator {
+    private mutating func tokenUsage(_ value: JSONValue?) -> [AgentEvent] {
+        guard let last = value?["last"] else { return [] }
+        if let window = value?["modelContextWindow"]?.int {
+            usage.contextWindow = window
+        }
+        usage.contextTokens = last["totalTokens"]?.int ?? usage.contextTokens
+        let tokens: Int
+        if let total = value?["total"]?["outputTokens"]?.int {
+            usage.outputTokens = total
+            guard total != totalOutputTokens else { return [.usageUpdated(usage)] }
+            tokens = totalOutputTokens.map { total >= $0 ? total - $0 : (last["outputTokens"]?.int ?? 0) }
+                ?? (last["outputTokens"]?.int ?? 0)
+            totalOutputTokens = total
+        } else {
+            tokens = last["outputTokens"]?.int ?? 0
+        }
+        isGenerating = false
+        return [.generationFinished(outputTokens: tokens), .usageUpdated(usage)]
+    }
+
+    private mutating func rateLimits(_ value: JSONValue?) -> [AgentEvent] {
+        guard let value else { return [] }
+        if value["planType"]?.string != nil {
+            usage.billing = .subscription
+        }
+        let windows = ["primary", "secondary"].compactMap { key -> PlanUsage.Window? in
+            guard let window = value[key], let used = window["usedPercent"]?.double else { return nil }
+            let minutes = window["windowDurationMins"]?.int
+            return PlanUsage.Window(
+                id: key,
+                title: Self.windowTitle(minutes: minutes),
+                utilization: used / 100,
+                resetsAt: window["resetsAt"]?.double.map { Date(timeIntervalSince1970: $0) }
+            )
+        }
+        return windows.isEmpty ? [] : [.planUsageUpdated(PlanUsage(windows: windows))]
     }
 }

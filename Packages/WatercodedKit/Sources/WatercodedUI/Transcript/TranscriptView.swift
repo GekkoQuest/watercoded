@@ -7,51 +7,119 @@ import WatercodedDesign
 struct TranscriptView: View {
     let controller: CurrentController
     @Environment(WindowModel.self) private var window
-    private let bottomID = "transcript-bottom"
+    @State private var position = ScrollPosition(idType: UUID.self, edge: .bottom)
+    @State private var highlightedItem: UUID?
+    @State private var followsOutput = true
+    @State private var isUserScrolling = false
+    @State private var scrollTask: Task<Void, Never>?
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.xLarge) {
-                    let layout = TranscriptLayout(controller.transcript)
-                    ForEach(layout.topLevel) { item in
-                        TranscriptRow(item: item, controller: controller, subagentCalls: layout.children)
-                            .padding(isHighlighted(item) ? Spacing.small : 0)
-                            .background {
-                                if isHighlighted(item) {
-                                    RoundedRectangle(cornerRadius: Radius.medium).fill(Color.accentColor.opacity(0.12))
-                                }
-                            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.xLarge) {
+                TranscriptHistory(controller: controller, highlightedItem: highlightedItem)
+                TranscriptTail(controller: controller)
+                Color.clear.frame(height: 1)
+            }
+            .scrollTargetLayout()
+            .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
+            .padding(.vertical, Spacing.xLarge)
+            .padding(.horizontal, Spacing.large)
+            .frame(maxWidth: .infinity)
+        }
+        // Keep a real row anchored when wrapping changes, including inspector resizing.
+        .scrollPosition($position, anchor: .bottom)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(followsOutput ? .bottom : nil, for: .sizeChanges)
+        .defaultScrollAnchor(.bottom, for: .alignment)
+        .onScrollPhaseChange { _, phase, context in
+            isUserScrolling = phase == .interacting || phase == .decelerating
+            if isUserScrolling {
+                followsOutput = Self.nearBottom(context.geometry)
+            }
+        }
+        .onScrollGeometryChange(for: Bool.self) { Self.nearBottom($0) } action: { _, near in
+            if isUserScrolling {
+                followsOutput = near
+            }
+        }
+        .onScrollGeometryChange(for: CGSize.self) { $0.contentSize } action: { _, _ in
+            // Lazy rows refine their estimated heights after wrapping changes. Follow the
+            // bottom through that refinement instead of retaining an obsolete pixel offset.
+            scheduleScroll()
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
+            scheduleScroll()
+        }
+        .onChange(of: controller.transcript.count) { scheduleScroll() }
+        .onChange(of: controller.streamingText) { scheduleScroll() }
+        .onChange(of: window.highlightedItem, initial: true) { _, item in
+            guard let item, controller.transcript.contains(where: { $0.id == item }) else { return }
+            // Navigation requests are consumed once; reopening a session must not replay one.
+            window.highlightedItem = nil
+            highlightedItem = item
+            followsOutput = false
+            scrollTask?.cancel()
+            scrollTask = nil
+            withAnimation(Motion.standard) { position.scrollTo(id: item, anchor: .center) }
+        }
+        .onDisappear {
+            scrollTask?.cancel()
+            scrollTask = nil
+        }
+    }
+
+    private static func nearBottom(_ geometry: ScrollGeometry) -> Bool {
+        geometry.contentOffset.y + geometry.containerSize.height >=
+            geometry.contentSize.height + geometry.contentInsets.bottom - 80
+    }
+
+    private func scheduleScroll() {
+        guard followsOutput, scrollTask == nil else { return }
+        scrollTask = Task {
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            defer { scrollTask = nil }
+            guard followsOutput, !isUserScrolling else { return }
+            position.scrollTo(edge: .bottom)
+        }
+    }
+}
+
+/// History does not observe streaming text, so token updates don't regroup every earlier row.
+private struct TranscriptHistory: View {
+    let controller: CurrentController
+    let highlightedItem: UUID?
+
+    var body: some View {
+        let layout = TranscriptLayout(controller.transcript)
+        ForEach(layout.topLevel) { item in
+            let highlighted = isHighlighted(item)
+            TranscriptRow(item: item, controller: controller, subagentCalls: layout.children)
+                .padding(highlighted ? Spacing.small : 0)
+                .background {
+                    if highlighted {
+                        RoundedRectangle(cornerRadius: Radius.medium).fill(Color.accentColor.opacity(0.12))
                     }
-                    if !controller.streamingText.isEmpty {
-                        AssistantMessageView(text: controller.streamingText, isStreaming: true)
-                    } else if controller.isTurnActive, !controller.isAwaitingUser {
-                        WorkingIndicator()
-                    }
-                    Color.clear.frame(height: 1).id(bottomID)
                 }
-                .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
-                .padding(.vertical, Spacing.xLarge)
-                .padding(.horizontal, Spacing.large)
-                .frame(maxWidth: .infinity)
-            }
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: controller.transcript.count) { proxy.scrollTo(bottomID, anchor: .bottom) }
-            .onChange(of: window.highlightedItem, initial: true) { _, item in
-                guard let item, controller.transcript.contains(where: { $0.id == item }) else { return }
-                withAnimation(Motion.standard) { proxy.scrollTo(item, anchor: .center) }
-            }
-            .onChange(of: controller.streamingText) { proxy.scrollTo(bottomID, anchor: .bottom) }
         }
     }
 
     private func isHighlighted(_ item: TranscriptItem) -> Bool {
-        // Question cards already have their own surface. The Answer shortcut should scroll to
-        // them without adding another box around the card.
         if case .question = item.content {
             return false
         }
-        return window.highlightedItem == item.id
+        return highlightedItem == item.id
+    }
+}
+
+private struct TranscriptTail: View {
+    let controller: CurrentController
+
+    var body: some View {
+        if !controller.streamingText.isEmpty {
+            AssistantMessageView(text: controller.streamingText, isStreaming: true)
+        } else if controller.isTurnActive, !controller.isAwaitingUser {
+            WorkingIndicator()
+        }
     }
 }
 

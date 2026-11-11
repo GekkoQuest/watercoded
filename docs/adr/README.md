@@ -18,3 +18,5 @@ surprising. Copy the format of an existing record and number it sequentially.
 | [0011](0011-codex-provider.md) | Codex through its app server | Accepted |
 | [0012](0012-delegation-between-agents.md) | Agents delegating to other agents, across providers | Accepted |
 | [0013](0013-github-releases-and-sparkle.md) | GitHub releases and Sparkle updates without Developer ID | Accepted |
+| [0014](0014-durable-session-checkpoints.md) | Durable session checkpoints and separate attachments | Accepted |
+| [0015](0015-bounded-diff-previews.md) | Bound changes previews to visible lines | Accepted |

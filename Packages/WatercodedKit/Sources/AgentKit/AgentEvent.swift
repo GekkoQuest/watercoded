@@ -52,6 +52,8 @@ public enum AgentEvent: Sendable, Hashable {
     case formRequested(FormRecord)
     /// A point the conversation can later be resumed or branched from (the provider's message ID).
     case checkpoint(String)
+    /// Apply one relay record's events and replay boundary together, without a save between them.
+    case relayBatch(events: [AgentEvent], checkpoint: RelayHandle)
     /// A non-fatal message worth showing inline (e.g. an automatic denial).
     case notice(Notice)
     /// The turn ended.

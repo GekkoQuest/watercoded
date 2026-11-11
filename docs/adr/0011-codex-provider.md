@@ -12,14 +12,14 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
 
 | Feature | Wire format |
 |---|---|
-| Handshake | `initialize` (clientInfo, capabilities) → response, then the `initialized` notification |
+| Handshake | `initialize` (clientInfo, capabilities) → response, then the `initialized` notification; `capabilities.optOutNotificationMethods` suppresses exact notification methods |
 | Session | `thread/start` / `thread/resume {threadId}` / `thread/fork {threadId, lastTurnId}`; result has `thread.id`, `model`, `instructionSources` |
 | Turn | `turn/start {threadId, input: [{type: text, text, text_elements}, {type: localImage, path}], effort?, model?, approvalPolicy?, sandboxPolicy?}`; mid-turn messages use `turn/steer {expectedTurnId}` |
 | Streaming | `item/agentMessage/delta {itemId, delta}`, then `item/completed` with the full `agentMessage` |
 | Tools | `item/started` / `item/completed` for `commandExecution` (status `completed`/`failed`/`declined`, `aggregatedOutput`, `exitCode`), `fileChange` (`changes[].path/diff`), `mcpToolCall`, `webSearch`, `collabAgentToolCall` |
 | Approvals | server requests `item/commandExecution/requestApproval` / `item/fileChange/requestApproval`, answered `{decision: accept \| decline}` |
 | Usage | `thread/tokenUsage/updated {last, total, modelContextWindow}` after each model response; `account/rateLimits/updated {primary, secondary: {usedPercent, windowDurationMins, resetsAt}, planType}` |
-| Turn end | **`thread/status/changed {status: {type: idle}}`.** 0.167.0 never sends `turn/completed` (handled too, in case later versions do). Failures arrive as `error {willRetry: false}` beforehand. |
+| Turn end | `thread/status/changed {status: {type: idle}}` or `turn/completed`. Initial fixtures ended only on idle; the long Sanctuary session emitted both. Finish once. Failures also arrive as `error {willRetry: false}` beforehand. |
 | Interrupt | `turn/interrupt {threadId, turnId}` |
 | Manual compaction | `thread/compact/start {threadId}` → `{}`; progress uses turn notifications and a `contextCompaction` item |
 | Goals | `thread/goal/get {threadId}` → `{goal}`; `thread/goal/set {threadId, objective, status: active, origin: user}` → `{goal}`; `thread/goal/clear {threadId, origin: user}` → `{}` |
@@ -83,3 +83,15 @@ with live sessions (`CodexLiveTests`, recorded fixtures in `Tests/CodexProviderT
   payloads and lifecycle translation. Live inference for these commands has not been re-verified.
   References: [App Server: goals and compaction](https://learn.chatgpt.com/docs/app-server),
   [Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
+
+## Long-session traffic and usage
+
+The installed 0.167.0 CLI's generated `InitializeCapabilities` supports
+`optOutNotificationMethods: [string]`. Watercoded opts out of `turn/diff/updated`: the changes inspector
+reads Git directly, so repeated full diffs would otherwise be logged and decoded without being used.
+This takes effect on new connections; existing relay connections retain their original negotiation.
+
+A Sanctuary session on 2026-11-11 repeated nonzero `last.outputTokens` values (588 and 313) without
+advancing `total.outputTokens`. Count generation output using changes in the cumulative total instead
+of summing every `last` notification. Use the provider's authoritative total to reconcile the session
+counter, including older overcounts after reattachment. Context usage still comes from `last.totalTokens`.

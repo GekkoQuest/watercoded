@@ -4,7 +4,9 @@ import WatercodedCore
 /// A live conversation with an agent.
 ///
 /// Sessions publish everything that happens on ``events`` as normalized ``AgentEvent``s. The
-/// stream finishes after ``AgentEvent/sessionEnded(_:)``. All methods may be called from any
+/// Background providers wrap each relay record's events and replay boundary in `relayBatch`;
+/// consumers must apply each batch atomically before persisting its boundary. The stream finishes
+/// after ``AgentEvent/sessionEnded(_:)``. All methods may be called from any
 /// task; implementations are expected to be actors.
 public protocol AgentSession: AnyObject, Sendable {
     var events: AsyncStream<AgentEvent> { get }

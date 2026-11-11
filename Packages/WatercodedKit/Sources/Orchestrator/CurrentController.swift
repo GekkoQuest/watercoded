@@ -32,11 +32,20 @@ public final class CurrentController: Identifiable {
 
     public nonisolated let id: CurrentID
     public internal(set) var current: Current
-    public internal(set) var transcript: [TranscriptItem]
+    public internal(set) var transcript: [TranscriptItem] {
+        didSet {
+            transcriptRevision += 1
+            scheduleProgressSave()
+        }
+    }
+
     /// A failed read must never turn into an empty transcript written over recoverable data.
     public internal(set) var transcriptLoadError: String?
     /// Assistant text still streaming in (not yet part of ``transcript``).
-    public internal(set) var streamingText = ""
+    public internal(set) var streamingText = "" {
+        didSet { scheduleProgressSave() }
+    }
+
     /// Timing and token counts for the current or most recent turn.
     public internal(set) var turnStats: TurnStats?
     public internal(set) var pendingPermissions: [PermissionRequest] = []
@@ -67,6 +76,12 @@ public final class CurrentController: Identifiable {
     /// Set once the Current is deleted. A deleted Current never writes to disk again, even if a view
     /// touches it on its way out (e.g. marking it viewed as its screen disappears).
     @ObservationIgnored private(set) var isDiscarded = false
+    @ObservationIgnored var pendingStreamingText = ""
+    @ObservationIgnored var streamingTask: Task<Void, Never>?
+    @ObservationIgnored var appliedRelay: RelayHandle?
+    @ObservationIgnored var transcriptRevision = 0
+    @ObservationIgnored var savedTranscriptRevision = -1
+    @ObservationIgnored var saveInFlight: Task<Void, Never>?
     @ObservationIgnored var toolItemIndex: [String: Int] = [:]
     @ObservationIgnored var activeSubagentCalls = Set<String>()
 
@@ -112,6 +127,7 @@ public final class CurrentController: Identifiable {
         id = current.id
         self.current = current
         self.transcript = transcript
+        appliedRelay = current.relay
         self.provider = provider
         self.repository = repository
         pendingAsyncQuestions = transcript.compactMap { item in
@@ -125,6 +141,7 @@ public final class CurrentController: Identifiable {
             }
         }
         migrateBranchCheckpointsIfNeeded()
+        recoverCompletedSessionAfterAgentExit()
     }
 
     public var providerDescriptor: ProviderDescriptor? {
@@ -253,6 +270,7 @@ public final class CurrentController: Identifiable {
         isTurnActive = false
         clearPendingInteractions()
         update { $0.restartSessionWhenIdle = nil }
+        appliedRelay = nil
         if let relay = current.relay {
             update { $0.relay = nil }
             try? FileManager.default.removeItem(at: relay.url)
@@ -268,7 +286,9 @@ public final class CurrentController: Identifiable {
             return
         }
         if let session, let handle = await session.relayHandle() {
-            update { $0.relay = handle }
+            if appliedRelay == nil {
+                appliedRelay = RelayHandle(directory: handle.directory, offset: 0)
+            }
             eventTask?.cancel()
             await session.detach()
         } else {
@@ -288,7 +308,7 @@ public final class CurrentController: Identifiable {
             update { $0.relay = nil }
             return false
         }
-        let hasUnread = RelayLog.records(in: handle.url).last.map { $0.end > handle.offset } ?? false
+        let hasUnread = RelayLog.hasUnread(in: handle.url, after: handle.offset)
         guard RelayLog.isAlive(in: handle.url) || hasUnread else {
             update { $0.relay = nil }
             try? FileManager.default.removeItem(at: handle.url)
@@ -303,22 +323,6 @@ public final class CurrentController: Identifiable {
         } catch {
             update { $0.relay = nil }
             return false
-        }
-    }
-
-    /// Writes pending changes immediately.
-    func flush() async {
-        saveTask?.cancel()
-        saveTask = nil
-        guard !isDiscarded else { return }
-        if let session, let handle = await session.relayHandle() {
-            update { $0.relay = handle }
-        }
-        guard !isDiscarded else { return }
-        try? await repository.saveCurrent(current)
-        guard !isDiscarded else { return }
-        if transcriptLoadError == nil {
-            try? await repository.saveTranscript(transcript, for: id)
         }
     }
 
@@ -344,7 +348,11 @@ public final class CurrentController: Identifiable {
         let session = try await provider.startSession(sessionConfiguration(for: provider))
         attach(session)
         if let handle = await session.relayHandle() {
-            update { $0.relay = handle }
+            let start = RelayHandle(directory: handle.directory, offset: 0)
+            if appliedRelay?.directory != handle.directory {
+                appliedRelay = start
+            }
+            update { $0.relay = start }
         }
         return session
     }
@@ -429,18 +437,9 @@ public final class CurrentController: Identifiable {
     /// Stops all future saves, including one already scheduled. Called when the Current is deleted.
     func discard() {
         isDiscarded = true
+        streamingTask?.cancel()
+        streamingTask = nil
         saveTask?.cancel()
         saveTask = nil
-    }
-
-    /// Coalesces bursts of changes into one write.
-    func scheduleSave() {
-        guard !isDiscarded else { return }
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled, let self else { return }
-            await flush()
-        }
     }
 }

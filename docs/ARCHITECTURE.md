@@ -111,12 +111,17 @@ falling back to the host's compare page. The PR description comes from `Workspac
 ## Persistence
 
 `FileWorkspaceRepository` writes versioned JSON envelopes to `~/Library/Application Support/Watercoded/`:
-`pools.json`, plus `currents/<id>/current.json` and `transcript.json`. Writes are atomic and coalesced (400 ms).
+`pools.json`, plus `currents/<id>/current.json` and immutable `transcript-<uuid>.json` files. The session
+manifest atomically publishes a transcript reference, partial streaming text and the relay offset applied
+by the controller. Explicit saves coalesce for 400 ms; long turns checkpoint progress every two seconds.
+Metadata-only saves retain the existing transcript. See ADR 0014.
 An unreadable transcript puts its session into an error state and prevents transcript writes or agent startup;
 the original file and any background relay logs are kept for recovery. Restoring a valid transcript and
 relaunching clears that protection.
-Image transcript records retain optional encoded image attachments, so previews survive relaunch and follow
-their user message through branching and reruns. Older count-only records still decode but cannot recover images.
+Image bytes live separately under each session's `attachments/<sha256>` and are written once. Transcript
+records retain image metadata; loading reconstructs attachments for previews, branching and reruns. Legacy
+`transcript.json` envelopes with embedded images migrate on their next save. Older count-only records still
+decode but cannot recover images.
 
 The session screen routes Markdown links through `TranscriptLink`: web URLs keep their browser behavior,
 while local paths become file URLs resolved against the worktree, with source-line suffixes separated from
@@ -136,6 +141,10 @@ When an agent isn't running under the relay (the **Keep agents working after Wat
 the provider lacks `.backgroundSessions`, or the process was stopped), its process ends with the app. Restored
 Currents that were mid-flight become *Ready for Review*, and **Resume** or the next message resumes the provider
 session (`claude --resume` or `codex resume`).
+
+The changes inspector bounds each file preview and virtualizes individual hunk headers and lines,
+including generated files with many thousands of changed lines. An outer lazy file list alone cannot
+bound an eager hunk's native text views. Unchanged polled diffs do not replace rendered state (ADR 0015).
 
 ## The water engine
 

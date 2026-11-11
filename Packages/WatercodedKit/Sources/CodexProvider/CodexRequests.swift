@@ -8,7 +8,10 @@ enum CodexRequests {
         [
             "clientInfo": ["name": "watercoded", "title": "Watercoded", "version": "1"],
             // Plan mode (`collaborationMode`) is part of the experimental API.
-            "capabilities": ["experimentalApi": true, "requestAttestation": false]
+            "capabilities": [
+                "experimentalApi": true, "requestAttestation": false,
+                "optOutNotificationMethods": ["turn/diff/updated"]
+            ]
         ]
     }
 

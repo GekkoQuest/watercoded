@@ -14,14 +14,7 @@ extension CurrentController {
     func handle(_ event: AgentEvent) {
         switch event {
         case let .sessionStarted(info):
-            update {
-                $0.providerSessionID = info.providerSessionID
-                $0.pendingBranchAt = nil // the branch now has its own session
-                if let billing = info.billing {
-                    $0.usage.billing = billing
-                }
-            }
-            scheduleSave()
+            handleSessionStarted(info)
         case .turnStarted:
             isTurnActive = true
             turnStats = TurnStats()
@@ -29,12 +22,19 @@ extension CurrentController {
                 update { $0.status = .flowing }
             }
         case let .textDelta(_, text):
-            streamingText += text
+            queueStreamingText(text)
+        case let .relayBatch(events, checkpoint):
+            for event in events {
+                handle(event)
+            }
+            appliedRelay = checkpoint
+            scheduleProgressSave()
         case let .checkpoint(id):
             lastCheckpoint = id
         case .generationStarted, .generationFinished:
             recordGeneration(event)
         case let .messageCompleted(_, text):
+            publishStreamingText()
             streamingText = ""
             append(.assistant(text: text))
         case let .thinking(_, text, tokens):
@@ -71,6 +71,27 @@ extension CurrentController {
             handleTurnFinished(outcome)
         case let .sessionEnded(end):
             handleSessionEnded(end)
+        }
+    }
+
+    private func handleSessionStarted(_ info: SessionInfo) {
+        update {
+            $0.providerSessionID = info.providerSessionID
+            $0.pendingBranchAt = nil // the branch now has its own session
+            if let billing = info.billing {
+                $0.usage.billing = billing
+            }
+        }
+        scheduleSave()
+    }
+
+    private func queueStreamingText(_ text: String) {
+        pendingStreamingText += text
+        if streamingTask == nil {
+            streamingTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                self?.publishStreamingText()
+            }
         }
     }
 
@@ -178,6 +199,9 @@ extension CurrentController {
             $0.usage.planUsage = usage.planUsage ?? previous.planUsage
             $0.usage.cacheTTL = usage.cacheTTL ?? previous.cacheTTL
             $0.usage.contextWindow = usage.contextWindow ?? previous.contextWindow
+            if let total = usage.outputTokens {
+                $0.outputTokens = total
+            }
         }
     }
 
@@ -229,6 +253,7 @@ extension CurrentController {
     }
 
     private func handleSessionEnded(_ end: SessionEnd) {
+        let interruptedWork = isTurnActive || isAwaitingUser || current.status == .flowing || current.status == .waiting
         flushStreamingText()
         session = nil
         eventTask = nil
@@ -237,12 +262,15 @@ extension CurrentController {
         clearPendingInteractions()
         activeSubagentCalls.removeAll()
         activity.activeSubagents = 0
+        appliedRelay = nil
         if let relay = current.relay {
             update { $0.relay = nil }
             try? FileManager.default.removeItem(at: relay.url)
         }
-        if case let .failed(message) = end, current.status != .settled {
+        if case let .failed(message) = end, current.status != .settled, interruptedWork {
             fail("The agent stopped unexpectedly: \(message)")
+        } else if case .failed = end, current.status == .ashore {
+            append(.notice(Notice(.info, "The background agent stopped. Send a message to resume this session.")))
         } else if current.status == .flowing || current.status == .waiting {
             update { $0.status = .ashore }
         }
@@ -263,7 +291,17 @@ extension CurrentController {
         scheduleSave()
     }
 
+    func publishStreamingText() {
+        streamingTask?.cancel()
+        streamingTask = nil
+        if !pendingStreamingText.isEmpty {
+            streamingText += pendingStreamingText
+            pendingStreamingText = ""
+        }
+    }
+
     func flushStreamingText() {
+        publishStreamingText()
         let text = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
         streamingText = ""
         if !text.isEmpty {

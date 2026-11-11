@@ -33,7 +33,7 @@ struct ClaudeCodeLiveTests {
         var sawText = false
         var approved = false
         var outcome: TurnOutcome?
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .sessionStarted(info):
                 sawSession = true
@@ -82,7 +82,7 @@ struct ClaudeCodeLiveTests {
         var planned = false
         var notices: [String] = []
         var outcome: TurnOutcome?
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .questionAsked(id, questions):
                 let answers = Dictionary(uniqueKeysWithValues: questions.map { (
@@ -133,7 +133,7 @@ struct ClaudeCodeLiveTests {
         try await first
             .send(UserMessage(text: "Use the Bash tool to run exactly: echo relay > relay.txt . Then reply DONE."))
         var requestID: String?
-        for await event in first.events {
+        for await event in first.events.flatMap(unbatch) {
             if case let .permissionRequested(request) = event {
                 requestID = request.id
                 break
@@ -145,7 +145,7 @@ struct ClaudeCodeLiveTests {
         let second = try await provider.reattachSession(handle)
         var sawRestoredRequest = false
         var outcome: TurnOutcome?
-        for await event in second.events {
+        for await event in second.events.flatMap(unbatch) {
             switch event {
             case let .permissionRequested(request):
                 sawRestoredRequest = request.id == requestID
@@ -186,7 +186,7 @@ struct ClaudeCodeLiveTests {
         var form: FormRecord?
         var reply = ""
         var finished = false
-        for await event in session.events {
+        for await event in session.events.flatMap(unbatch) {
             switch event {
             case let .permissionRequested(request):
                 try await session.respond(to: request.id, with: .allow)
@@ -217,5 +217,19 @@ struct ClaudeCodeLiveTests {
         }
         return ["out/Products/Debug", "debug"].map { directory.appending(path: ".build/\($0)/watercoded-relay") }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+}
+
+/// Direct provider tests inspect domain events; the app applies relay batches atomically instead.
+private func unbatch(_ event: AgentEvent) -> AsyncStream<AgentEvent> {
+    AsyncStream { continuation in
+        if case let .relayBatch(events, _) = event {
+            for event in events {
+                continuation.yield(event)
+            }
+        } else {
+            continuation.yield(event)
+        }
+        continuation.finish()
     }
 }
