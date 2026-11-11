@@ -129,11 +129,17 @@ def main():
         ('build-tests', 300, ['swift', 'build', '--package-path', PACKAGE, '--build-tests']),
         ('non-ui-tests', 120, test + ['--skip', 'WatercodedUITests']),
         ('ui-logic-tests', 60, test + ['--filter', 'WatercodedUITests', '--skip',
-                                     'DiffRenderingTests|TranscriptNavigationTests']),
+                                     'DiffRenderingTests|TranscriptNavigationTests|ToolExpansionTests']),
+        ('tool-expansion-tests', 90, test + ['--filter', 'WatercodedUITests.ToolExpansionTests']),
         ('diff-rendering-tests', 45, test + ['--filter', 'WatercodedUITests.DiffRenderingTests']),
         ('transcript-navigation-tests', 45,
          test + ['--filter', 'WatercodedUITests.TranscriptNavigationTests']),
     ]
+    if sys.argv[1:] == ['--tool-expansion-only']:
+        phases = [phase for phase in phases if phase[0] in ('build-tests', 'tool-expansion-tests')]
+    elif sys.argv[1:]:
+        print('Unsupported arguments', file=sys.stderr)
+        return 2
     for label, seconds, arguments in phases:
         code = run_phase(label, seconds, arguments)
         if code:

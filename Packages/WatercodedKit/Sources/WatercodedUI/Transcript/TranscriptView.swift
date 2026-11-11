@@ -7,11 +7,17 @@ import WatercodedDesign
 struct TranscriptView: View {
     let controller: CurrentController
     @Environment(WindowModel.self) private var window
+    @State private var expansion: ToolExpansion
     @State private var position = ScrollPosition(idType: UUID.self, edge: .bottom)
     @State private var highlightedItem: UUID?
     @State private var followsOutput = true
     @State private var isUserScrolling = false
     @State private var scrollTask: Task<Void, Never>?
+
+    init(controller: CurrentController, expansion: ToolExpansion = ToolExpansion()) {
+        self.controller = controller
+        _expansion = State(initialValue: expansion)
+    }
 
     var body: some View {
         ScrollView {
@@ -26,6 +32,7 @@ struct TranscriptView: View {
             .padding(.horizontal, Spacing.large)
             .frame(maxWidth: .infinity)
         }
+        .environment(expansion)
         // Keep a real row anchored when wrapping changes, including inspector resizing.
         .scrollPosition($position, anchor: .bottom)
         .defaultScrollAnchor(.bottom, for: .initialOffset)

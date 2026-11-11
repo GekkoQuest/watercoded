@@ -146,6 +146,10 @@ The changes inspector bounds each file preview and virtualizes individual hunk h
 including generated files with many thousands of changed lines. An outer lazy file list alone cannot
 bound an eager hunk's native text views. Unchanged polled diffs do not replace rendered state (ADR 0015).
 
+Expanded tool cards use fixed-height native text viewports. Text wrapping stays inside the native
+scroll view instead of changing the lazy transcript’s size proposals. Disclosure state belongs to
+the transcript, so recycling a row preserves expansion (ADR 0016).
+
 ## The water engine
 
 - `WaterSurface`: a damped wave equation over N columns, solved with 3 substeps per frame (CFL-clamped), with volume conservation. Streaming drives smooth, time-based wave modes rather than per-frame noise; sidebar vessels use slower waves and stronger damping than the composer. It also handles drops, spray and bubbles, and a hanging approval droplet on a spring.
