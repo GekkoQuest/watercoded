@@ -20,6 +20,12 @@ struct SidebarView: View {
                 currentsList
             }
         }
+        .onChange(of: window.selection) { _, selection in
+            // Keep this outside the list so search results can also reveal a repository.
+            if let selection, let controller = workspace.controller(selection) {
+                UserDefaults.standard.set(true, forKey: PoolSection.expansionKey(for: controller.current.poolID))
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) { SidebarSearchField() }
         .safeAreaInset(edge: .bottom) { footer }
         .confirmationDialog(
@@ -41,36 +47,40 @@ struct SidebarView: View {
     }
 
     private var currentsList: some View {
-        @Bindable var window = window
-        return List(selection: $window.selection) {
-            if !workspace.shore.isEmpty {
-                Section("Needs You") {
-                    ForEach(workspace.shore) { CurrentRow(controller: $0, showsPool: true).tag($0.id) }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.large) {
+                if !workspace.shore.isEmpty {
+                    VStack(alignment: .leading, spacing: Spacing.xxSmall) {
+                        Text("Needs You")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, Spacing.small)
+                        ForEach(workspace.shore) {
+                            SidebarSessionButton(controller: $0, showsPool: true)
+                        }
+                    }
+                }
+                ForEach(workspace.pools) { pool in
+                    PoolSection(pool: pool, pendingDeletion: $pendingDeletion)
                 }
             }
-            ForEach(workspace.pools) { pool in
-                Section {
-                    let currents = workspace.currents(in: pool.id)
-                    if currents.isEmpty {
-                        Button("Start a Session…") { window.beginNewCurrent(in: pool.id) }
-                            .buttonStyle(.link)
-                            .padding(.vertical, Spacing.xSmall)
-                    }
-                    ForEach(Self.nested(currents)) { entry in
-                        let controller = entry.controller
-                        CurrentRow(controller: controller, showsPool: false)
-                            .padding(.leading, CGFloat(entry.depth) * Spacing.large)
-                            .tag(controller.id)
-                            .contextMenu {
-                                CurrentContextMenu(controller: controller, pendingDeletion: $pendingDeletion)
-                            }
-                    }
-                } header: {
-                    PoolHeader(pool: pool)
-                }
-            }
+            .padding(Spacing.small)
         }
-        .listStyle(.sidebar)
+        .onMoveCommand { direction in
+            moveSelection(direction)
+        }
+    }
+
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        guard direction == .up || direction == .down else { return }
+        let visible = workspace.shore + workspace.pools.flatMap { pool in
+            let expanded = UserDefaults.standard.object(forKey: PoolSection.expansionKey(for: pool.id)) as? Bool ?? true
+            return expanded ? Self.nested(workspace.currents(in: pool.id)).map(\.controller) : []
+        }
+        guard !visible.isEmpty else { return }
+        let index = visible.firstIndex { $0.id == window.selection }
+        let next = index.map { $0 + (direction == .down ? 1 : -1) } ?? (direction == .down ? 0 : visible.count - 1)
+        window.selection = visible[min(max(next, 0), visible.count - 1)].id
     }
 
     /// A session followed by the sessions it delegated to (and theirs), indented by depth.
@@ -139,30 +149,129 @@ struct SidebarView: View {
     }
 }
 
+/// Keeps each repository's disclosure state across launches without changing workspace data.
+private struct PoolSection: View {
+    let pool: Pool
+    @Binding var pendingDeletion: CurrentController?
+    @Environment(Workspace.self) private var workspace
+    @Environment(WindowModel.self) private var window
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage private var isExpanded: Bool
+
+    init(pool: Pool, pendingDeletion: Binding<CurrentController?>) {
+        self.pool = pool
+        _pendingDeletion = pendingDeletion
+        _isExpanded = AppStorage(wrappedValue: true, Self.expansionKey(for: pool.id))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xxSmall) {
+            PoolHeader(pool: pool, isExpanded: $isExpanded)
+                .padding(.leading, Spacing.small)
+                .padding(.vertical, Spacing.xSmall)
+            // Keep the content mounted so its height interpolates instead of deleting List rows.
+            VStack(alignment: .leading, spacing: Spacing.xxSmall) {
+                let currents = workspace.currents(in: pool.id)
+                if currents.isEmpty {
+                    Button("Start a Session…") { window.beginNewCurrent(in: pool.id) }
+                        .buttonStyle(.link)
+                        .padding(Spacing.small)
+                }
+                ForEach(SidebarView.nested(currents)) { entry in
+                    SidebarSessionButton(controller: entry.controller, showsPool: false, depth: entry.depth)
+                        .contextMenu {
+                            CurrentContextMenu(controller: entry.controller, pendingDeletion: $pendingDeletion)
+                        }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: isExpanded ? nil : 0, alignment: .top)
+            .clipped()
+            .opacity(isExpanded ? 1 : 0)
+            .allowsHitTesting(isExpanded)
+            .accessibilityHidden(!isExpanded)
+        }
+        .animation(reduceMotion ? nil : Motion.standard, value: isExpanded)
+    }
+
+    static func expansionKey(for poolID: PoolID) -> String {
+        "sidebar.repository.\(poolID).isExpanded"
+    }
+}
+
+private struct SidebarSessionButton: View {
+    let controller: CurrentController
+    let showsPool: Bool
+    var depth = 0
+    @Environment(WindowModel.self) private var window
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            window.selection = controller.id
+        } label: {
+            CurrentRow(controller: controller, showsPool: showsPool)
+                .padding(.leading, CGFloat(depth) * Spacing.large)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.small)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .background(
+            Color.accentColor.opacity(window.selection == controller.id ? 0.18 : (isHovered ? 0.08 : 0)),
+            in: RoundedRectangle(cornerRadius: Radius.small)
+        )
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(window.selection == controller.id ? .isSelected : [])
+    }
+}
+
 private struct PoolHeader: View {
     let pool: Pool
+    @Binding var isExpanded: Bool
     @Environment(Workspace.self) private var workspace
     @Environment(WindowModel.self) private var window
     @State private var isEditingFolders = false
 
     var body: some View {
         HStack {
-            Label(pool.name, systemImage: "folder")
-            if let count = pool.additionalDirectories?.count, count > 0 {
-                Image(systemName: "folder.badge.plus")
-                    .foregroundStyle(.secondary)
-                    .help("\(count) extra \(count == 1 ? "folder" : "folders") shared with agents")
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(spacing: Spacing.small) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: Spacing.large, height: Spacing.large)
+                    Label(pool.name, systemImage: "folder")
+                    if let count = pool.additionalDirectories?.count, count > 0 {
+                        Image(systemName: "folder.badge.plus")
+                            .foregroundStyle(.secondary)
+                            .help("\(count) extra \(count == 1 ? "folder" : "folders") shared with agents")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .help("\(isExpanded ? "Collapse" : "Expand") \(pool.name)")
+            .accessibilityLabel(pool.name)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint("\(isExpanded ? "Hide" : "Show") sessions in this repository")
             Button("New session", systemImage: "square.and.pencil") {
                 window.beginNewCurrent(in: pool.id)
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(width: Spacing.xLarge, height: Spacing.xLarge)
+            .contentShape(.rect)
             .help("Start a new session in \(pool.name)")
             .accessibilityLabel("New session in \(pool.name)")
         }
-        .padding(.trailing, Spacing.medium)
+        .frame(maxWidth: .infinity)
         .sheet(isPresented: $isEditingFolders) { RepositorySettingsSheet(pool: pool) }
         .contextMenu {
             Button("New Session…", systemImage: "square.and.pencil") { window.beginNewCurrent(in: pool.id) }
