@@ -37,3 +37,10 @@ output updates and scrolling to the end.
 
 Run this suite only in an isolated environment. CI gives it its own process and external
 watchdog; a layout deadlock must produce diagnostics and fail the job, not hang a release.
+
+The isolated macOS 26 comparison run [43052249757](https://github.com/GekkoQuest/watercoded/actions/runs/43052249757)
+passed the expansion scenario with both the new renderer and the 0.15.1 code-pane/card
+renderer on the current transcript implementation. The new native viewport also passed
+selection, bounds and output-update checks. This is coverage of the repaired structure,
+not a reproduction of the original 43-second hang. The trace establishes where the app
+was blocked; it does not establish which individual size invalidation initiated the loop.

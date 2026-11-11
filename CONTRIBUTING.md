@@ -61,7 +61,7 @@ project.yml               XcodeGen spec
   use a separate test environment, or wait until the user has finished their sessions. UI tests
   create native windows and process tests launch and terminate subprocesses.
 - CI and Release run `scripts/ci-test.py` only on GitHub Actions. It builds once, then runs
-  non-UI tests, UI logic, diff rendering and transcript navigation in separate processes.
+  non-UI tests, UI logic, diff rendering, transcript navigation and tool expansion in separate processes.
   External deadlines capture thread samples and fail the step even if Swift's executor is
   blocked. Failed jobs upload `.build/test-diagnostics/`. Do not set `GITHUB_ACTIONS` locally
   to bypass its live-app guard.
