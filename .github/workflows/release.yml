@@ -20,6 +20,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-26
+    timeout-minutes: 20
     permissions:
       contents: write
     env:
@@ -56,7 +57,16 @@ jobs:
       - name: Metal Toolchain
         run: xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
       - run: make lint
-      - run: make test
+      - name: Test with external watchdog
+        timeout-minutes: 12
+        run: python3 scripts/ci-test.py
+      - name: Upload test hang diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-hang-${{ github.workflow }}-${{ github.run_attempt }}
+          path: .build/test-diagnostics/
+          if-no-files-found: ignore
       - run: make build CONFIG=Release
       - name: Package and sign update
         env:
