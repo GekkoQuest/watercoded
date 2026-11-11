@@ -17,6 +17,7 @@ struct ToolCallView: View {
                 header
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("tool-call-\(record.callID)")
 
             if isExpanded {
                 if !children.isEmpty {
