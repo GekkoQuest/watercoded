@@ -135,6 +135,11 @@ def main():
         ('transcript-navigation-tests', 45,
          test + ['--filter', 'WatercodedUITests.TranscriptNavigationTests']),
     ]
+    if sys.argv[1:] == ['--tool-expansion-only']:
+        phases = [phase for phase in phases if phase[0] in ('build-tests', 'tool-expansion-tests')]
+    elif sys.argv[1:]:
+        print('Unsupported arguments', file=sys.stderr)
+        return 2
     for label, seconds, arguments in phases:
         code = run_phase(label, seconds, arguments)
         if code:

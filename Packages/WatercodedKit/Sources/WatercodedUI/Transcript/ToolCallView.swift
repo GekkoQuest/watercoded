@@ -12,7 +12,9 @@ struct ToolCallView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.small) {
             Button {
-                withAnimation(Motion.quick) { isExpanded.toggle() }
+                // The surrounding lazy transcript must see one discrete row-size change,
+                // not intermediate proposals for nested selectable text during an animation.
+                isExpanded.toggle()
             } label: {
                 header
             }

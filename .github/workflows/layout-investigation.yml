@@ -1,0 +1,49 @@
+name: Layout comparison
+on:
+  push:
+    branches: [fix/tool-expansion-layout]
+permissions:
+  contents: read
+jobs:
+  expansion:
+    runs-on: macos-26
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        renderer: [legacy, current]
+    continue-on-error: ${{ matrix.renderer == 'legacy' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore 0.15.1 renderer for comparison
+        if: matrix.renderer == 'legacy'
+        run: |
+          for file in TranscriptView ToolCodeBlock ToolCallView; do
+            path="Packages/WatercodedKit/Sources/WatercodedUI/Transcript/$file.swift"
+            git show "v0.15.1:$path" > "$path"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('Packages/WatercodedKit/Sources/WatercodedUI/Transcript/ToolCallView.swift')
+          s = p.read_text().replace('            .buttonStyle(.plain)\n',
+              '            .buttonStyle(.plain)\n            .accessibilityIdentifier("tool-call-\\(record.callID)")\n', 1)
+          p.write_text(s)
+          PY
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then sudo xcode-select -s /Applications/Xcode_26.app; fi
+          xcodebuild -version
+          xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Exercise expansion
+        env:
+          WATERCODED_LEGACY_RENDERER: ${{ matrix.renderer == 'legacy' && '1' || '0' }}
+        run: python3 scripts/ci-test.py --tool-expansion-only
+      - name: Upload comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expansion-${{ matrix.renderer }}-${{ github.run_attempt }}
+          path: .build/test-diagnostics/
+          if-no-files-found: ignore
