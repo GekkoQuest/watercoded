@@ -10,7 +10,8 @@ import WatercodedDesign
 @MainActor
 @Suite("Tool expansion in a live transcript", .serialized, .timeLimit(.minutes(1)))
 struct ToolExpansionTests {
-    @Test func `expand and collapse a shell command while output streams and width changes`() async throws {
+    @Test(arguments: [true, false])
+    func `expand and collapse a shell command while output streams and width changes`(followsOutput: Bool) async throws {
         let record = ToolCallRecord(
             callID: "expansion-regression", name: "Shell", kind: .shell,
             summary: "Inspect generated data", input: Self.command,
@@ -34,8 +35,12 @@ struct ToolExpansionTests {
         )
         defer { controller.discard() }
         let model = WindowModel()
-        model.highlightedItem = items[items.count - 1].id
-        let host = NSHostingView(rootView: TranscriptView(controller: controller).environment(model))
+        if !followsOutput {
+            model.highlightedItem = items[items.count - 1].id
+        }
+        let expansion = ToolExpansion()
+        let host = NSHostingView(rootView: TranscriptView(controller: controller, expansion: expansion)
+            .environment(model))
         let window = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 900, height: 700),
             styleMask: [.borderless],
@@ -49,10 +54,10 @@ struct ToolExpansionTests {
         controller.handle(.turnStarted)
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(500))
-        for cycle in 0 ..< 24 {
+        for cycle in 0 ..< 12 {
             FileHandle.standardError.write(Data("Expanding command, cycle \(cycle)\n".utf8))
-            let button = try #require(findElement(in: window, identifier: "tool-call-\(record.callID)"))
-            #expect((button.accessibilityPerformPress?() ?? false))
+            let collapsedScrolls = countScrollViews(in: host)
+            withAnimation(Motion.quick) { expansion.toggle(record.callID) }
             for width in [900.0, 500.0, 760.0] {
                 window.setContentSize(NSSize(width: width, height: 700))
                 controller.streamingText = "Still working. \(cycle) \(width)"
@@ -60,10 +65,12 @@ struct ToolExpansionTests {
                 window.displayIfNeeded()
                 try await Task.sleep(for: .milliseconds(40))
             }
-            let collapse = try #require(findElement(in: window, identifier: "tool-call-\(record.callID)"))
-            #expect((collapse.accessibilityPerformPress?() ?? false))
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(countScrollViews(in: host) >= collapsedScrolls + 2, "Both command and output must be mounted")
+            #expect(expansion.expandedCalls.contains(record.callID))
+            withAnimation(Motion.quick) { expansion.toggle(record.callID) }
             host.layoutSubtreeIfNeeded()
-            try await Task.sleep(for: .milliseconds(40))
+            try await Task.sleep(for: .milliseconds(300))
         }
         #expect(controller.transcript.count == items.count)
     }
@@ -106,25 +113,33 @@ struct ToolExpansionTests {
         #expect(scroll.documentVisibleRect.maxY <= editor.bounds.maxY + 1)
     }
 
+    private func countScrollViews(in view: NSView) -> Int {
+        (view is NSScrollView ? 1 : 0) + view.subviews.reduce(0) { $0 + countScrollViews(in: $1) }
+    }
+
+    private static func history() -> [TranscriptItem] {
+        (0 ..< 840).map { index in
+            if index.isMultiple(of: 10) {
+                return TranscriptItem(content: .assistant(text: "Progress \(index). " + String(
+                    repeating: "Wrapping text. ",
+                    count: 30
+                )))
+            }
+            if index.isMultiple(of: 25) {
+                return TranscriptItem(content: .user(text: "Please continue checking the generated data."))
+            }
+            return TranscriptItem(content: .toolCall(ToolCallRecord(
+                callID: "history-\(index)", name: "Shell", kind: .shell, summary: "Inspect data \(index)",
+                input: command, output: output, status: .succeeded
+            )))
+        }
+    }
+
     private func findEditor(in view: NSView) -> NSTextView? {
         if let editor = view as? NSTextView {
             return editor
         }
         return view.subviews.lazy.compactMap { findEditor(in: $0) }.first
-    }
-
-    private func findElement(in element: AnyObject, identifier: String, depth: Int = 0)
-        -> (AnyObject)? {
-        guard depth < 40 else { return nil }
-        if element.accessibilityIdentifier?() == identifier {
-            return element
-        }
-        for child in element.accessibilityChildren?() ?? [] {
-            if let match = findElement(in: child as AnyObject, identifier: identifier, depth: depth + 1) {
-                return match
-            }
-        }
-        return nil
     }
 
     private static let command = JSONValue.object(["command": .string("""

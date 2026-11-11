@@ -17,18 +17,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Restore 0.15.1 renderer for comparison
+      - name: Restore 0.15.1 code panes and animated disclosure for comparison
         if: matrix.renderer == 'legacy'
         run: |
-          for file in TranscriptView ToolCodeBlock ToolCallView; do
+          for file in ToolCodeBlock ToolCallView; do
             path="Packages/WatercodedKit/Sources/WatercodedUI/Transcript/$file.swift"
             git show "v0.15.1:$path" > "$path"
           done
           python3 - <<'PY'
           from pathlib import Path
           p = Path('Packages/WatercodedKit/Sources/WatercodedUI/Transcript/ToolCallView.swift')
-          s = p.read_text().replace('            .buttonStyle(.plain)\n',
-              '            .buttonStyle(.plain)\n            .accessibilityIdentifier("tool-call-\\(record.callID)")\n', 1)
+          s = p.read_text().replace('@State private var isExpanded = false',
+              '@Environment(ToolExpansion.self) private var expansion\n    private var isExpanded: Bool { expansion.expandedCalls.contains(record.callID) }')
+          s = s.replace('isExpanded.toggle()', 'expansion.toggle(record.callID)')
           p.write_text(s)
           PY
       - name: Select Xcode

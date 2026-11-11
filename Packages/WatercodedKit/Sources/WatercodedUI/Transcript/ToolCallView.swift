@@ -7,14 +7,18 @@ struct ToolCallView: View {
     let record: ToolCallRecord
     /// Calls a subagent made inside this one (only for subagent/Task calls).
     var children: [ToolCallRecord] = []
-    @State private var isExpanded = false
+    @Environment(ToolExpansion.self) private var expansion
+
+    private var isExpanded: Bool {
+        expansion.expandedCalls.contains(record.callID)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.small) {
             Button {
                 // The surrounding lazy transcript must see one discrete row-size change,
                 // not intermediate proposals for nested selectable text during an animation.
-                isExpanded.toggle()
+                expansion.toggle(record.callID)
             } label: {
                 header
             }
@@ -44,6 +48,8 @@ struct ToolCallView: View {
         .padding(.horizontal, Spacing.medium)
         .padding(.vertical, Spacing.small)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        // Ancestor animations must not interpolate the size of the native scroll panes.
+        .transaction { $0.animation = nil }
         .accessibilityElement(children: .contain)
     }
 
