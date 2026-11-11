@@ -45,7 +45,9 @@ struct ToolTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let editor = scroll.documentView as? NSTextView, editor.string != text else { return }
+        guard let editor = scroll.documentView as? NSTextView else { return }
+        editor.setAccessibilityLabel(title)
+        guard editor.string != text else { return }
         let selection = editor.selectedRange()
         let origin = scroll.contentView.bounds.origin
         editor.string = text

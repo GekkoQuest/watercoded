@@ -11,28 +11,15 @@ import WatercodedDesign
 @Suite("Tool expansion in a live transcript", .serialized, .timeLimit(.minutes(1)))
 struct ToolExpansionTests {
     @Test(arguments: [true, false])
-    func `expand and collapse a shell command while output streams and width changes`(followsOutput: Bool) async throws {
+    func `tool expansion survives streaming and resizing`(followsOutput: Bool) async throws {
         let record = ToolCallRecord(
             callID: "expansion-regression", name: "Shell", kind: .shell,
             summary: "Inspect generated data", input: Self.command,
             output: Self.output, status: .succeeded
         )
-        var items = (0 ..< 300).map { index in
-            TranscriptItem(content: .assistant(text: "Progress \(index). " + String(
-                repeating: "Wrapping text. ",
-                count: 30
-            )))
-        }
+        var items = Self.history()
         items.append(TranscriptItem(content: .toolCall(record)))
-        let controller = CurrentController(
-            current: Current(
-                poolID: PoolID(),
-                title: "Expansion",
-                providerID: "test",
-                channel: Channel(kind: .checkout, path: "/tmp", branch: "main", baseCommit: "HEAD")
-            ),
-            transcript: items, provider: nil, repository: InMemoryWorkspaceRepository()
-        )
+        let controller = makeController(transcript: items)
         defer { controller.discard() }
         let model = WindowModel()
         if !followsOutput {
@@ -56,7 +43,6 @@ struct ToolExpansionTests {
         try await Task.sleep(for: .milliseconds(500))
         for cycle in 0 ..< 12 {
             FileHandle.standardError.write(Data("Expanding command, cycle \(cycle)\n".utf8))
-            let collapsedScrolls = countScrollViews(in: host)
             withAnimation(Motion.quick) { expansion.toggle(record.callID) }
             for width in [900.0, 500.0, 760.0] {
                 window.setContentSize(NSSize(width: width, height: 700))
@@ -65,8 +51,13 @@ struct ToolExpansionTests {
                 window.displayIfNeeded()
                 try await Task.sleep(for: .milliseconds(40))
             }
-            try await Task.sleep(for: .milliseconds(300))
-            #expect(countScrollViews(in: host) >= collapsedScrolls + 2, "Both command and output must be mounted")
+            // Width changes can legitimately move a non-following row out of the lazy viewport.
+            // Navigate back before checking its mounted content; cached collapsed views are not a baseline.
+            if !followsOutput {
+                model.highlightedItem = items[items.count - 1].id
+            }
+            try await Task.sleep(for: .milliseconds(500))
+            #expect(countScrollViews(in: host) >= 3, "Both command and output must be mounted")
             #expect(expansion.expandedCalls.contains(record.callID))
             withAnimation(Motion.quick) { expansion.toggle(record.callID) }
             host.layoutSubtreeIfNeeded()
@@ -111,6 +102,18 @@ struct ToolExpansionTests {
         scroll.contentView.scroll(to: NSPoint(x: 0, y: editor.bounds.maxY - scroll.contentView.bounds.height))
         scroll.reflectScrolledClipView(scroll.contentView)
         #expect(scroll.documentVisibleRect.maxY <= editor.bounds.maxY + 1)
+    }
+
+    private func makeController(transcript: [TranscriptItem]) -> CurrentController {
+        CurrentController(
+            current: Current(
+                poolID: PoolID(),
+                title: "Expansion",
+                providerID: "test",
+                channel: Channel(kind: .checkout, path: "/tmp", branch: "main", baseCommit: "HEAD")
+            ),
+            transcript: transcript, provider: nil, repository: InMemoryWorkspaceRepository()
+        )
     }
 
     private func countScrollViews(in view: NSView) -> Int {
