@@ -95,13 +95,15 @@ public enum RelayHost {
                     append(RelayRecord.metaLine("stderr", ["line": line]))
                 }
             }
-            startReadingInput(fd)
-
             // Mark the relay alive before the agent starts, so nobody can see output from a relay that looks dead.
             let pidFile = directory.appending(path: RelayFiles.pid)
             try "\(getpid())".write(to: pidFile, atomically: true, encoding: .utf8)
             do {
                 try process.run()
+                // The FIFO can receive controls as soon as it exists, including before run()
+                // publishes isRunning. Keep them buffered until launch completes; otherwise
+                // an early terminate/interrupt is consumed and silently discarded.
+                startReadingInput(fd)
             } catch {
                 try? FileManager.default.removeItem(at: pidFile)
                 throw error

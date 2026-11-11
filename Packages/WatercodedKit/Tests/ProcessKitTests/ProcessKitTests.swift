@@ -251,6 +251,27 @@ struct RelayTests {
         #expect(!RelayLog.isAlive(in: directory))
     }
 
+    @Test(arguments: 0 ..< 12)
+    func `relay preserves termination sent immediately after launch`(attempt: Int) async throws {
+        let relay = try #require(Self.relayExecutable, "build the package first")
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "watercoded-early-stop-\(attempt)-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let process = try RelayedProcess.launch(
+            relay: RelayCommand(executable: relay, arguments: []), directory: directory,
+            spec: ProcessSpec(
+                executable: URL(filePath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; while :; do sleep 1; done"],
+                workingDirectory: FileManager.default.temporaryDirectory,
+                environment: ProcessInfo.processInfo.environment
+            )
+        )
+        process.terminate()
+        let status = await process.exitCode()
+        #expect(status == SIGTERM || status == SIGKILL)
+        #expect(!RelayLog.isAlive(in: directory))
+    }
+
     @Test func `relay termination escalates when an agent ignores SIGTERM`() async throws {
         let relay = try #require(Self.relayExecutable, "build the package first")
         let directory = FileManager.default.temporaryDirectory
